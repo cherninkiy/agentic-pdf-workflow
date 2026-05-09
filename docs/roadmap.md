@@ -7,25 +7,26 @@
 ---
 
 ## День 1: Фундамент и инфраструктура
+<!-- ✅ Completed -->
 
 **Цель:** Поднять базовые сервисы, создать скелеты API Gateway и Worker.
 
 ### Задачи
-1. **Настройка Docker Compose**  
-   - PostgreSQL (схема: `documents`, `outbox`)  
-   - RabbitMQ (создать exchanges/queues: `pdf_processing`, `retry`, `dlq`)  
-   - Контейнеры для Gateway и Worker (пока пустые).  
+1. **Настройка Docker Compose**  <!-- ✅ Completed -->
+   - PostgreSQL (схема: `documents`, `outbox`)
+   - RabbitMQ (создать exchanges/queues: `pdf_processing`, `retry`, `dlq`)
+   - Контейнеры для Gateway и Worker (пока пустые).
    - Файловое хранилище: локальный Docker volume (общий том для Gateway и Worker).
-2. **Создать проекты .NET 8**  
-   - `ApiGateway` (ASP.NET Core Web API)  
-   - `Worker` (Console App + `IHostedService`)  
+2. **Создать проекты .NET 8**  <!-- ✅ Completed -->
+   - `ApiGateway` (ASP.NET Core Web API)
+   - `Worker` (Console App + `IHostedService`)
    - `Shared` (общие DTO, интерфейсы для `IFileStorage`, `IOCRService`).
-3. **Реализовать абстракции**  
-   - `IFileStorage` с реализацией `MinioFileStorage` (через Minio SDK) и `LocalFileStorage` (для офлайн-разработки).  
+3. **Реализовать абстракции**  <!-- ✅ Completed -->
+   - `IFileStorage` с реализацией `MinioFileStorage` (через Minio SDK) и `LocalFileStorage` (для офлайн-разработки).
    - `IRepository` для работы с PostgreSQL (Dapper или EF Core).
-4. **Инициализация БД**  
-   - Таблица `documents`: `id`, `filename`, `status`, `created_at`, `started_at`, `completed_at`, `error_message`, `extracted_text` (text).  
-   - Таблица `outbox`: `id`, `document_id`, `message_payload` (json), `created_at`, `processed_at`.  
+4. **Инициализация БД**  <!-- ✅ Completed -->
+   - Таблица `documents`: `id`, `filename`, `status`, `created_at`, `started_at`, `completed_at`, `error_message`, `extracted_text` (text).
+   - Таблица `outbox`: `id`, `document_id`, `message_payload` (json), `created_at`, `processed_at`.
    - Таблица `processed_messages` (для idempotency): `message_id`, `document_id`, `processed_at`.
 
 **Результат:** Docker Compose поднимает все сервисы. Gateway и Worker запускаются и подключаются к БД, RabbitMQ, MinIO.
@@ -33,20 +34,21 @@
 ---
 
 ## День 2: API Gateway + Outbox Publisher
+<!-- ✅ Completed -->
 
 **Цель:** Реализовать эндпоинты и гарантированную публикацию команд.
 
 ### Задачи
-1. **API Controller**  
-   - `POST /upload` – принимает PDF, генерирует `document_id`, сохраняет файл через `IFileStorage`, записывает метаданные в БД (status='uploaded') и **одновременно** добавляет запись в `outbox` с JSON-сообщением (DocumentId, FilePath, MessageId).  
+1. **API Controller**  <!-- ✅ Completed -->
+   - `POST /upload` – принимает PDF, генерирует `document_id`, сохраняет файл через `IFileStorage`, записывает метаданные в БД (status='uploaded') и **одновременно** добавляет запись в `outbox` с JSON‑сообщением (DocumentId, FilePath, MessageId).
    - Использовать транзакцию (Unit of Work).
-2. **Фоновый Outbox Publisher**  
-   - Сканирует `outbox` каждые 5 секунд, берёт непроцессированные записи.  
-   - Публикует сообщение в RabbitMQ (`pdf_processing` exchange/queue).  
-   - После успешной публикации помечает запись `processed_at = NOW()`.  
+2. **Фоновый Outbox Publisher**  <!-- ✅ Completed -->
+   - Сканирует `outbox` каждые 5 секунд, берёт непроцессированные записи.
+   - Публикует сообщение в RabbitMQ (`pdf_processing` exchange/queue).
+   - После успешной публикации помечает запись `processed_at = NOW()`.
    - Использовать MassTransit или RabbitMQ.Client с confirm mode.
-3. **GET – эндпоинты**  
-   - `GET /list` – возвращает список документов (id, filename, status, created_at).  
+3. **GET – эндпоинты**  <!-- ✅ Completed -->
+   - `GET /list` – возвращает список документов (id, filename, status, created_at).
    - `GET /text/{id}` – возвращает текст, если статус `completed`, иначе `202 Accepted` (если `processing`) или `409 Conflict` (если `failed`).
 
 **Результат:** Можно загрузить PDF, получить `202`, и в БД появляется запись в outbox. Фоновый публикатор отправляет сообщение в очередь.
@@ -54,19 +56,20 @@
 ---
 
 ## День 3: Worker – базовая обработка (PdfPig + статусы)
+<!-- ✅ Completed -->
 
 **Цель:** Worker потребляет сообщения, обновляет статусы, извлекает текст через PdfPig.
 
 ### Задачи
-1. **Worker Consumer**  
-   - Подписка на очередь `pdf_processing` (prefetch=1).  
+1. **Worker Consumer**  <!-- ✅ Completed -->
+   - Подписка на очередь `pdf_processing` (prefetch=1).
    - Получив сообщение, извлекает `DocumentId`, `FilePath`, `MessageId`.
-2. **Idempotency check**  
+2. **Idempotency check**  <!-- ✅ Completed -->
    - Проверяет таблицу `processed_messages`. Если MessageId уже обработан – сразу ACK, игнорируем.
-3. **Взятие задачи (конкурентно-безопасное)**  
-   - `UPDATE documents SET status='processing', started_at=NOW() WHERE id=@id AND status='uploaded'`. Если затронута 0 строк – значит, уже кто-то другой обрабатывает → ACK и выход.
+3. **Взятие задачи (конкурентно‑безопасное)**  <!-- ✅ Completed -->
+   - `UPDATE documents SET status='processing', started_at=NOW() WHERE id=@id AND status='uploaded'`. Если затронута 0 строк – значит, уже кто‑то другой обрабатывает → ACK и выход.
 4. **Скачивание PDF** из MinIO/Local по `FilePath`.
-5. **Извлечение текста через PdfPig**  
+5. **Извлечение текста через PdfPig**  <!-- ✅ Completed -->
    - Если текст найден – сохраняем в `extracted_text` и обновляем статус на `completed`.
 6. **Запись в processed_messages** (в той же транзакции, что и обновление документа) – вставляем `message_id`.
 7. **Подтверждение (ACK)** сообщения в RabbitMQ.
@@ -80,23 +83,24 @@
 ---
 
 ## День 4: Retry механизм + Azure OCR Fallback
+<!-- ✅ Completed -->
 
 **Цель:** Добавить отказоустойчивость (ретраи с задержкой) и OCR для скан-копий.
 
 ### Задачи
-1. **Настроить Retry механизм в RabbitMQ**  
-   - Создать exchange `retry_exchange` с типом `x-delayed-message`.  
-   - Очереди: `retry_5s`, `retry_30s`, `retry_60s` с соответствующими TTL и привязками.  
-   - Consumer при ошибке не ACK, а публикует сообщение в `retry_exchange` с заголовком `x-delay` и увеличивает счётчик попыток (хранить в `RetryCount` в самом сообщении).  
+1. **Настроить Retry механизм в RabbitMQ**  <!-- ✅ Completed -->
+   - Создать exchange `retry_exchange` с типом `x-delayed-message`.
+   - Очереди: `retry_5s`, `retry_30s`, `retry_60s` с соответствующими TTL и привязками.
+   - Consumer при ошибке не ACK, а публикует сообщение в `retry_exchange` с заголовком `x-delay` и увеличивает счётчик попыток (хранить в `RetryCount` в самом сообщении).
    - После трёх попыток – отправка в DLQ.
-2. **Azure AI Document Intelligence интеграция**  
-   - Реализовать `IOCRService` с методом `ExtractTextAsync(byte[] pdfContent)`.  
-   - Использовать Azure SDK (`DocumentAnalysisClient`).  
+2. **Azure AI Document Intelligence интеграция**  <!-- ✅ Completed -->
+   - Реализовать `IOCRService` с методом `ExtractTextAsync(byte[] pdfContent)`.
+   - Использовать Azure SDK (`DocumentAnalysisClient`).
    - В Worker: если PdfPig вернул пустую строку, вызываем `IOCRService`. Результат сохраняем в БД.
-3. **Лимиты Azure F0**  
-   - На входе проверять размер PDF ≤ 4 MB, иначе возвращать ошибку (статус `failed`).  
+3. **Лимиты Azure F0**  <!-- ✅ Completed -->
+   - На входе проверять размер PDF ≤ 4 MB, иначе возвращать ошибку (статус `failed`).
    - *Чанкинг отложим на день 7.*
-4. **Добавить статус `failed`**  
+4. **Добавить статус `failed`**  <!-- ✅ Completed -->
    - При исчерпании ретраев или фатальной ошибке (например, файл слишком большой) – обновить статус документа на `failed` с сохранением `error_message`.
 
 **Результат:** Система выдерживает временные сбои, автоматически повторяет обработку, а скан-копии проходят через Azure OCR.
@@ -104,18 +108,19 @@
 ---
 
 ## День 5: Интеграция MAF workflow + чтение DLQ
+<!-- ✅ Completed -->
 
 **Цель:** Завершить MVP: обернуть логику Worker в Microsoft Agent Framework (MAF) и добавить простой обработчик DLQ.
 
 ### Задачи
-1. **Реализовать Worker через MAF**  
-   - Создать `Agent` с шагами: `DownloadDocument`, `UpdateStatusProcessing`, `ExtractTextStep` (содержит PdfPig → fallback OCR), `SaveTextAndComplete`.  
-   - Использовать встроенный в MAF механизм ретраев и checkpoint (заменить ручные ретраи на декларативные).  
+1. **Реализовать Worker через MAF**  <!-- ✅ Completed -->
+   - Создать `Agent` с шагами: `DownloadDocument`, `UpdateStatusProcessing`, `ExtractTextStep` (содержит PdfPig → fallback OCR), `SaveTextAndComplete`.
+   - Использовать встроенный в MAF механизм ретраев и checkpoint (заменить ручные ретраи на декларативные).
    - (Если MAF preview не стабилен – оставить ручную реализацию, но в документации указать как демонстрацию подхода).
-2. **Обработчик DLQ**  
-   - Простой консольный скрипт или отдельный сервис, который читает DLQ, логирует ошибку и обновляет статус документа на `failed`, если сообщение попало в DLQ по неизлечимой ошибке.  
-   - Можно сделать API-ручку для репроцессинга (по желанию).
-3. **Написать интеграционные тесты**  
+2. **Обработчик DLQ**  <!-- ✅ Completed -->
+   - Простой консольный скрипт или отдельный сервис, который читает DLQ, логирует ошибку и обновляет статус документа на `failed`, если сообщение попало в DLQ по неизлечимой ошибке.
+   - Можно сделать API‑ручку для репроцессинга (по желанию).
+3. **Написать интеграционные тесты**  <!-- ✅ Completed -->
    - Docker Compose + Testcontainers для проверки полного цикла.
 
 **Результат:** Полноценный MVP, готовый к демонстрации. Все основные требования выполнены.
