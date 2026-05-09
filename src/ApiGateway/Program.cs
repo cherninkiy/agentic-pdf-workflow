@@ -17,29 +17,20 @@ using Microsoft.EntityFrameworkCore;
 // The workflow follows the transactional outbox pattern: uploads are stored in the DB and an outbox row is created; the OutboxPublisher later publishes the message to RabbitMQ.
 var builder = WebApplication.CreateBuilder(args);
 
-// ── Database (PostgreSQL via EF Core) ──
-// Auto-creates tables via EnsureCreated() at startup.
-// In production, use EF Core migrations instead.
-// Configure DbContext: use PostgreSQL when a connection string is provided,
-// otherwise fall back to an in‑memory database (useful for unit tests).
-// Use in‑memory database for Development and Testing environments to avoid external PostgreSQL dependencies.
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-if (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Testing"))
-{
-    builder.Services.AddDbContext<AppDbContext>(options =>
-        options.UseInMemoryDatabase("TestDb"));
-}
-else if (!string.IsNullOrWhiteSpace(connectionString))
-{
-    builder.Services.AddDbContext<AppDbContext>(options =>
-        options.UseNpgsql(connectionString));
-}
-else
-{
-    // Fallback to in‑memory if no connection string provided.
-    builder.Services.AddDbContext<AppDbContext>(options =>
-        options.UseInMemoryDatabase("TestDb"));
-}
+        // ── Database (PostgreSQL via EF Core) ──
+        // Use PostgreSQL whenever a connection string is supplied, regardless of environment.
+        // Fall back to an in‑memory database only when no connection string is available (e.g., unit tests).
+        var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+        if (!string.IsNullOrWhiteSpace(connectionString))
+        {
+            builder.Services.AddDbContext<AppDbContext>(options =>
+                options.UseNpgsql(connectionString));
+        }
+        else
+        {
+            builder.Services.AddDbContext<AppDbContext>(options =>
+                options.UseInMemoryDatabase("TestDb"));
+        }
 
 // ── MassTransit + RabbitMQ ──
 // Publishes PdfProcessingCommand messages. The OutboxPublisher

@@ -14,7 +14,8 @@ public static class ServiceCollectionExtensions
         // 2. Fallback to a temporary directory (writable in all environments)
         var configuredPath = configuration.GetValue<string>("Storage__LocalPath") ??
                              configuration.GetValue<string>("Storage:LocalPath");
-        var localPath = configuredPath ?? System.IO.Path.GetTempPath();
+        // Use a consistent default shared with the Worker service
+        var localPath = configuredPath ?? "/app/storage";
 
         if (storageProvider == "local")
         {
