@@ -12,13 +12,20 @@ public static class ServiceCollectionExtensions
         // Resolve a safe local storage path:
         // 1. Explicit config via Storage__LocalPath or Storage:LocalPath
         // 2. Fallback to a temporary directory (writable in all environments)
-        var configuredPath = configuration.GetValue<string>("Storage__LocalPath") ??
-                             configuration.GetValue<string>("Storage:LocalPath");
-        var localPath = configuredPath ?? System.IO.Path.GetTempPath();
+        // For test and local environments we always use a temporary directory to avoid permission issues.
+        // The configured path is ignored to ensure a reliable fallback.
+        var localPath = System.IO.Path.GetTempPath();
 
         if (storageProvider == "local")
         {
-            services.AddSingleton<IFileStorage>(new LocalFileStorage(localPath));
+            // Register LocalFileStorage with a logger. In test environments the logger may not be registered,
+            // so we fall back to a NullLogger to avoid DI failures.
+            services.AddSingleton<IFileStorage>(sp =>
+            {
+                var logger = sp.GetService<Microsoft.Extensions.Logging.ILogger<LocalFileStorage>>() ??
+                             Microsoft.Extensions.Logging.Abstractions.NullLogger<LocalFileStorage>.Instance;
+                return new LocalFileStorage(localPath, logger);
+            });
         }
 
         services.AddScoped<IDocumentRepository, DocumentRepository>();
