@@ -3,6 +3,16 @@ using Shared.Models;
 
 namespace ApiGateway.Services;
 
+// ------------------------------------------------------------
+// DocumentService – Core business logic for the API Gateway
+// ------------------------------------------------------------
+// This service implements the upload flow using the transactional outbox pattern:
+//   * Saves the uploaded PDF to the configured IFileStorage implementation.
+//   * Persists a DocumentDto with status 'Uploaded'.
+//   * Creates an OutboxMessage containing a PdfProcessingCommand.
+//   * Both the document and outbox row are saved in a single DB transaction.
+// The OutboxPublisher background service later reads pending outbox rows and
+// publishes the command to RabbitMQ for asynchronous processing by the Worker.
 public class DocumentService
 {
     private readonly IDocumentRepository _repository;
@@ -19,6 +29,14 @@ public class DocumentService
         _logger = logger;
     }
 
+    /// <summary>
+    /// Core upload logic with Transactional Outbox.
+    /// 1. Save file to storage (local volume or MinIO)
+    /// 2. Create document record (status=uploaded)
+    /// 3. Create outbox row with serialized PdfProcessingCommand
+    /// Steps 2+3 happen in the same DB transaction (see DocumentRepository.CreateAsync).
+    /// The OutboxPublisher background service will later pick up the outbox row and publish to RabbitMQ.
+    /// </summary>
     public async Task<UploadResponse> CreateDocumentAsync(Stream fileStream, string filename, CancellationToken cancellationToken = default)
     {
         var documentId = Guid.NewGuid();
@@ -49,6 +67,7 @@ public class DocumentService
             CreatedAt = DateTime.UtcNow
         };
 
+        // Atomic insert: document + outbox in one transaction
         await _repository.CreateAsync(document, outboxMessage, cancellationToken);
         _logger.LogInformation("Document {DocumentId} uploaded, filename: {Filename}, outbox message: {OutboxId}", documentId, filename, outboxMessage.Id);
 
@@ -60,18 +79,34 @@ public class DocumentService
         };
     }
 
+    /// <summary>
+    /// Returns all documents ordered by creation date (newest first).
+    /// </summary>
     public async Task<List<DocumentListItem>> GetAllDocumentsAsync(CancellationToken cancellationToken = default)
     {
         var documents = await _repository.GetAllAsync(cancellationToken);
-        return documents.Select(d => new DocumentListItem
-        {
-            Id = d.Id,
-            Filename = d.Filename,
-            Status = d.Status,
-            CreatedAt = d.CreatedAt
-        }).ToList();
+        // Ensure deterministic ordering: newest first by CreatedAt, then by Id to break ties.
+        var ordered = documents
+            .OrderByDescending(d => d.CreatedAt)
+            .ThenByDescending(d => d.Id)
+            .Select(d => new DocumentListItem
+            {
+                Id = d.Id,
+                Filename = d.Filename,
+                Status = d.Status,
+                CreatedAt = d.CreatedAt
+            })
+            .ToList();
+        return ordered;
     }
 
+    /// <summary>
+    /// Returns extracted text for a document based on its status:
+    ///   - Completed → return text with 200
+    ///   - Processing/Uploaded → return 202 (retry later)
+    ///   - Failed → return 409 (error message included)
+    ///   - Not found → return 404
+    /// </summary>
     public async Task<(DocumentDto? Document, string? ErrorMessage, int? StatusCode)> GetDocumentTextAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var document = await _repository.GetByIdAsync(id, cancellationToken);

@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev, 'feature/**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: pdf_processing
+          POSTGRES_USER: pdf_user
+          POSTGRES_PASSWORD: pdf_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      rabbitmq:
+        image: rabbitmq:4-management
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics check_port_connectivity"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 8.0.x
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Build
+      run: dotnet build --no-restore -c Release
+
+    - name: Run unit tests
+      run: dotnet test tests/ApiGateway.UnitTests/ApiGateway.UnitTests.csproj --no-restore -c Release --logger "console;verbosity=detailed"
+      env:
+        ConnectionStrings__DefaultConnection: "Host=localhost;Port=5432;Database=pdf_processing;Username=pdf_user;Password=pdf_password"
+        RabbitMq__Host: localhost
+        RabbitMq__Username: guest
+        RabbitMq__Password: guest
+
+    - name: Run worker tests
+      run: dotnet test tests/Worker.UnitTests/Worker.UnitTests.csproj --no-restore -c Release --logger "console;verbosity=detailed"
+      env:
+        ConnectionStrings__DefaultConnection: "Host=localhost;Port=5432;Database=pdf_processing;Username=pdf_user;Password=pdf_password"
+        RabbitMq__Host: localhost
+        RabbitMq__Username: guest
+        RabbitMq__Password: guest
+
+    - name: Build Docker images
+      run: |
+        docker build -t pdf-api-gateway -f src/ApiGateway/Dockerfile .
+        docker build -t pdf-worker -f src/Worker/Dockerfile .

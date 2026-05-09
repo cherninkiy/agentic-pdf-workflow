@@ -8,8 +8,18 @@ public class LocalFileStorage : IFileStorage
 
     public LocalFileStorage(string basePath)
     {
-        _basePath = basePath;
-        Directory.CreateDirectory(_basePath);
+        // Ensure the base path exists. If creation fails (e.g., due to permission issues),
+        // fall back to a temporary directory that is always writable.
+        try
+        {
+            _basePath = basePath;
+            Directory.CreateDirectory(_basePath);
+        }
+        catch (Exception)
+        {
+            _basePath = System.IO.Path.GetTempPath();
+            Directory.CreateDirectory(_basePath);
+        }
     }
 
     public async Task<string> SaveAsync(Stream content, string fileName, CancellationToken cancellationToken = default)
