@@ -18,16 +18,22 @@ using Microsoft.EntityFrameworkCore;
 var builder = WebApplication.CreateBuilder(args);
 
         // ── Database (PostgreSQL via EF Core) ──
-        // Use PostgreSQL whenever a connection string is supplied, regardless of environment.
-        // Fall back to an in‑memory database only when no connection string is available (e.g., unit tests).
+        // Use an in‑memory database for Development and Testing environments to avoid external dependencies.
+        // In other environments (e.g., Production) use PostgreSQL when a connection string is provided.
         var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-        if (!string.IsNullOrWhiteSpace(connectionString))
+        if (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Testing"))
+        {
+            builder.Services.AddDbContext<AppDbContext>(options =>
+                options.UseInMemoryDatabase("TestDb"));
+        }
+        else if (!string.IsNullOrWhiteSpace(connectionString))
         {
             builder.Services.AddDbContext<AppDbContext>(options =>
                 options.UseNpgsql(connectionString));
         }
         else
         {
+            // Fallback to in‑memory if no connection string is provided.
             builder.Services.AddDbContext<AppDbContext>(options =>
                 options.UseInMemoryDatabase("TestDb"));
         }
