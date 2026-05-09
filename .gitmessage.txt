@@ -1,0 +1,41 @@
+# <type>(<scope>): <subject>
+# <subject> — short description (up to 50 chars, imperative mood)
+#
+# <body> — details with bullet points (-), each line up to 72 chars
+#
+# <footer> — references to issues, breaking changes
+#
+# Types: feat, fix, docs, style, refactor, test, chore, perf, ci, build
+#
+# Scopes: infra, api-gateway, worker, shared, db, docker, pipeline
+#
+# Examples for this project (PDF Processing System):
+# feat(infra): scaffold Docker Compose with PostgreSQL, RabbitMQ, MinIO
+# - add postgres:16-alpine with init.sql volume
+# - add rabbitmq:4-management with healthcheck
+# - add minio/minio with console port 9001
+#
+# feat(shared): define shared DTOs and interfaces
+# - add DocumentStatus enum (uploaded/processing/completed/failed)
+# - add DocumentDto, DocumentListItem, PdfProcessingCommand records
+# - add IFileStorage, IOCRService, IDocumentRepository interfaces
+#
+# feat(api-gateway): implement POST /upload with transactional outbox
+# - add DocumentsController with Upload, GetList, GetText endpoints
+# - add DocumentService with outbox message creation
+# - add OutboxPublisher background service polling every 5s
+#
+# feat(worker): implement PdfPig text extraction consumer
+# - add PdfProcessingConsumer with idempotency check
+# - add PdfTextExtractor with PdfPig OCR fallback
+# - add DocumentProcessingService orchestration
+#
+# feat(worker): add retry policy and dead letter queue
+# - configure MassTransit 3x immediate retry then error queue
+# - set status 'failed' on unrecoverable errors
+# - log error_message for diagnostics
+#
+# feat(docker): create Dockerfiles and wire into compose
+# - add ApiGateway Dockerfile with multi-stage build
+# - add Worker Dockerfile with multi-stage build
+# - wire health dependencies between containers
