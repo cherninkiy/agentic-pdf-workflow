@@ -1,0 +1,63 @@
+flowchart TB
+    subgraph Клиент
+        A["REST Client"]
+    end
+
+    subgraph "API Gateway"
+        B["API Controller"]
+        O["Background Outbox Publisher"]
+    end
+
+    subgraph Брокер сообщений
+        D[("RabbitMQ")]
+        D1["pdf_processing_queue"]
+        D4["Dead Letter Queue"]
+        D5["Retry Exchange"]
+    end
+
+    subgraph Воркер
+        W["PDF Worker (MAF Workflow)"]
+    end
+
+    subgraph "Text Recognition Pipeline"
+        direction TB
+        T1["Извлечение текста (PdfPig)"]
+        T2{"текст найден?"}
+        T3["OCR (Azure AI Document Intelligence)"]
+        T4["Сохранение текста в PostgreSQL"]
+        T1 --> T2
+        T2 -->|"нет"| T3
+        T3 --> T4
+        T2 -->|"да"| T4
+    end
+
+    subgraph Хранилища
+        S["Файловое хранилище (локальный Docker volume)"]
+        I["PostgreSQL (метаданные + текст + Outbox)"]
+    end
+
+    A -->|"POST /upload"| B
+    B -->|"сохранить файл"| S
+    B -->|"сохранить метаданные (status='uploaded') + outbox запись"| I
+    O -->|"фоновая публикация"| D1
+
+    D1 -->|"потребить"| W
+    W -->|"скачать PDF"| S
+    W -->|"обновить status='processing'"| I
+    W -->|"запустить распознавание"| T1
+
+    T4 --> UpdateStatus["обновить статус на 'completed'"]
+    UpdateStatus --> Ack["подтвердить сообщение (ACK)"]
+
+    A -->|"GET /list"| B
+    B -->|"запрос метаданных"| I
+    I -->|"список документов"| B
+    B -->|"200 OK"| A
+
+    A -->|"GET /text/{id}"| B
+    B -->|"запрос статуса и текста"| I
+    I -->|"извлечённый текст"| B
+    B -->|"200 OK / 202 / 409"| A
+
+    D1 -.->|"3 ретрая с задержкой"| D5
+    D5 -.->|"исчерпаны ретраи"| D4
