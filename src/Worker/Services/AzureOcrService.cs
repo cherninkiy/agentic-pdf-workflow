@@ -8,6 +8,7 @@ public class AzureOcrService : IOCRService
     private readonly string? _endpoint;
     private readonly string? _apiKey;
     private readonly ILogger<AzureOcrService> _logger;
+    private static readonly HttpClient _httpClient = new();
 
     public AzureOcrService(ILogger<AzureOcrService> logger, string? endpoint = null, string? apiKey = null)
     {
@@ -26,17 +27,14 @@ public class AzureOcrService : IOCRService
 
         try
         {
-            // Using HttpClient directly to call Azure AI Document Intelligence REST API
-            // This avoids pulling in the full Azure SDK for MVP
-            using var httpClient = new HttpClient();
-            httpClient.BaseAddress = new Uri(_endpoint.TrimEnd('/') + "/");
-            httpClient.DefaultRequestHeaders.Add("Ocp-Apim-Subscription-Key", _apiKey);
-
-            using var content = new ByteArrayContent(pdfContent);
-            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/pdf");
+            using var request = new HttpRequestMessage(HttpMethod.Post,
+                new Uri(_endpoint.TrimEnd('/') + "/formrecognizer/documentModels/prebuilt-read:analyze?api-version=2023-07-31"));
+            request.Headers.Add("Ocp-Apim-Subscription-Key", _apiKey);
+            request.Content = new ByteArrayContent(pdfContent);
+            request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/pdf");
 
             // Start the analysis
-            var response = await httpClient.PostAsync("formrecognizer/documentModels/prebuilt-read:analyze?api-version=2023-07-31", content, cancellationToken);
+            var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             response.EnsureSuccessStatusCode();
 
             var operationLocation = response.Headers.GetValues("Operation-Location").FirstOrDefault();
@@ -46,12 +44,14 @@ public class AzureOcrService : IOCRService
                 return null;
             }
 
-            // Poll for result
+            // Poll for result with max 30 attempts at 1s intervals
             string? result = null;
             for (int i = 0; i < 30; i++)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 await Task.Delay(1000, cancellationToken);
-                var pollResponse = await httpClient.GetAsync(operationLocation, cancellationToken);
+
+                var pollResponse = await _httpClient.GetAsync(operationLocation, cancellationToken);
                 pollResponse.EnsureSuccessStatusCode();
 
                 var json = await pollResponse.Content.ReadAsStringAsync(cancellationToken);
@@ -60,9 +60,14 @@ public class AzureOcrService : IOCRService
 
                 if (status == "succeeded")
                 {
-                    var pages = doc.RootElement.GetProperty("analyzeResult").GetProperty("pages");
-                    var texts = new List<string>();
+                    if (!doc.RootElement.TryGetProperty("analyzeResult", out var analyzeResult) ||
+                        !analyzeResult.TryGetProperty("pages", out var pages))
+                    {
+                        _logger.LogWarning("OCR succeeded but no pages found in result");
+                        break;
+                    }
 
+                    var texts = new List<string>();
                     foreach (var page in pages.EnumerateArray())
                     {
                         if (page.TryGetProperty("lines", out var lines))
@@ -82,12 +87,27 @@ public class AzureOcrService : IOCRService
 
                 if (status == "failed")
                 {
-                    _logger.LogError("Azure OCR analysis failed");
+                    var errorMessage = "Azure OCR analysis failed";
+                    if (doc.RootElement.TryGetProperty("error", out var error))
+                    {
+                        errorMessage = error.TryGetProperty("message", out var msg) ? msg.GetString()! : errorMessage;
+                    }
+                    _logger.LogError("{Error}", errorMessage);
                     break;
+                }
+
+                if (i == 29)
+                {
+                    _logger.LogWarning("Azure OCR polling timed out after 30 seconds");
                 }
             }
 
             return result;
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("Azure OCR was cancelled");
+            throw;
         }
         catch (Exception ex)
         {

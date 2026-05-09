@@ -34,7 +34,18 @@ public class OutboxPublisher : BackgroundService
                 {
                     try
                     {
-                        var command = JsonSerializer.Deserialize<PdfProcessingCommand>(message.MessagePayload);
+                        PdfProcessingCommand? command = null;
+                        try
+                        {
+                            command = JsonSerializer.Deserialize<PdfProcessingCommand>(message.MessagePayload);
+                        }
+                        catch (JsonException ex)
+                        {
+                            _logger.LogError(ex, "Corrupt outbox message payload for {OutboxId}, marking as processed to unblock queue", message.Id);
+                            await repository.MarkOutboxProcessedAsync(message.Id, stoppingToken);
+                            continue;
+                        }
+
                         if (command != null)
                         {
                             await _bus.Publish(command, stoppingToken);

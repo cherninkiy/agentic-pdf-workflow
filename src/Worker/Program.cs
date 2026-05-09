@@ -51,7 +51,7 @@ var host = Host.CreateDefaultBuilder(args)
             {
                 configurator.UseMessageRetry(r =>
                 {
-                    r.Immediate(3);
+                    r.Intervals(TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(60));
                     r.Ignore<ArgumentNullException>();
                 });
             });
