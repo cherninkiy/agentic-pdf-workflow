@@ -25,8 +25,6 @@
   /workflows/ci.yml     – CI‑pipeline (сборка, тесты, Docker‑образы)
 docker-compose.yml      – Оркестрация PostgreSQL, RabbitMQ, ApiGateway и Worker
 db/init.sql             – Инициализационный скрипт БД
-artifacts/
-  implementation_plan.md – (удалён из репозитория, оставлен в artifacts для справки)
 ```
 
 ## Начало работы
@@ -84,13 +82,13 @@ GitHub Actions (`.github/workflows/ci.yml`) выполняет:
 
 ## Сводка рабочего процесса (комментарии в коде)
 
-- **Загрузка (`POST /upload`)**
+* **Загрузка (`POST /upload`)**
   1. Проверка файла (PDF, ≤ 4 МБ).
   2. Сохранение файла через `IFileStorage`.
   3. Создание `DocumentDto` со статусом `Uploaded`.
   4. Создание `OutboxMessage` с `PdfProcessingCommand`.
   5. Сохранение обеих записей в одной транзакции.
 
-- **Outbox Publisher** (`BackgroundService`)
-  - Периодически опрашивает таблицу `outbox` и публикует непроцессированные сообщения в RabbitMQ через MassTransit.
+* **Outbox Publisher** (`BackgroundService`)
+  - Периодически сканирует таблицу `outbox` и публикует непроцессированные сообщения в RabbitMQ через MassTransit.
   - После успешной публикации помечает запись как обработанную.
