@@ -13,14 +13,16 @@ public class AppDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        // Status is stored as INTEGER (matching document_statuses lookup table).
+        // C# enum DocumentStatus maps directly to int (0 = Uploaded, 1 = Processing, 2 = Completed, 3 = Failed).
+        // No JOIN needed in services — status int is sufficient for all business logic.
         modelBuilder.Entity<DocumentDto>(entity =>
         {
             entity.ToTable("documents");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Filename).HasMaxLength(512).IsRequired();
             entity.Property(e => e.Status)
-                .HasConversion<string>()
-                .HasMaxLength(20)
+                .HasConversion<int>()
                 .IsRequired();
             entity.Property(e => e.FilePath).HasMaxLength(1024).IsRequired();
             entity.Property(e => e.CreatedAt).IsRequired();

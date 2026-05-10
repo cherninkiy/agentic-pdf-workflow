@@ -16,7 +16,7 @@ using Worker.Storage;
 //   1. Idempotency check (processed_messages table)
 //   2. Optimistic lock (UPDATE documents SET status='processing' WHERE status='uploaded')
 //   3. Download PDF from storage
-//   4. Extract text via PdfPig (fallback to Azure OCR if empty)
+//   4. Extract text via PdfPig (fallback to Tesseract OCR if empty)
 //   5. Save text + mark message processed in one transaction
 //   6. ACK on success, throw on failure → MassTransit retry with delays
 
@@ -38,19 +38,12 @@ var host = Host.CreateDefaultBuilder(args)
         services.AddSingleton<IFileStorage>(new LocalFileStorage(localPath));
 
         // ── OCR Service (optional) ──
-        // Azure AI Document Intelligence. If not configured, PdfPig-only mode.
-        var azureEndpoint = configuration.GetValue<string>("Azure:DocumentIntelligence:Endpoint");
-        var azureApiKey = configuration.GetValue<string>("Azure:DocumentIntelligence:ApiKey");
-        if (!string.IsNullOrEmpty(azureEndpoint) && !string.IsNullOrEmpty(azureApiKey))
-        {
-            services.AddSingleton<IOCRService>(sp =>
-                new AzureOcrService(sp.GetRequiredService<ILogger<AzureOcrService>>(), azureEndpoint, azureApiKey));
-        }
-        else
-        {
-            services.AddSingleton<IOCRService>(sp =>
-                new AzureOcrService(sp.GetRequiredService<ILogger<AzureOcrService>>(), null, null));
-        }
+        // Tesseract OCR — used as fallback when PdfPig returns no text (scanned PDFs).
+        // Requires tesseract-ocr and poppler-utils installed on the system.
+        // PdfTextExtractor gracefully skips OCR fallback when IOCRService is not registered.
+        // Enabled by default — remove or comment out to use PdfPig-only mode.
+        services.AddSingleton<IOCRService>(sp =>
+            new TesseractOcrService(sp.GetRequiredService<ILogger<TesseractOcrService>>()));
 
         // ── Application Services ──
         services.AddScoped<PdfTextExtractor>();

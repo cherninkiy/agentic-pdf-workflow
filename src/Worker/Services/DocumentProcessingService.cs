@@ -70,7 +70,7 @@ public class DocumentProcessingService
             }
 
             // ── Extract text ──
-            // PdfPig for text-based PDFs → Azure OCR fallback for scanned documents
+            // PdfPig for text-based PDFs → Tesseract OCR fallback for scanned documents
             var extractedText = await _textExtractor.ExtractTextAsync(pdfBytes, cancellationToken);
 
             // ── Save result + mark message processed ──

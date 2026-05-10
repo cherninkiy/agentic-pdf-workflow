@@ -43,13 +43,24 @@ jobs:
       with:
         dotnet-version: 8.0.x
 
+    - name: Install system dependencies (Tesseract OCR + poppler-utils)
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends \
+          tesseract-ocr \
+          tesseract-ocr-eng \
+          tesseract-ocr-rus \
+          poppler-utils
+        tesseract --version
+        which pdftoppm
+
     - name: Restore dependencies
       run: dotnet restore
 
     - name: Build
       run: dotnet build --no-restore -c Release
 
-    - name: Run unit tests
+    - name: Run unit tests (ApiGateway)
       run: dotnet test tests/ApiGateway.UnitTests/ApiGateway.UnitTests.csproj --no-restore -c Release --logger "console;verbosity=detailed"
       env:
         ConnectionStrings__DefaultConnection: "Host=localhost;Port=5432;Database=pdf_processing;Username=pdf_user;Password=pdf_password"
@@ -57,13 +68,22 @@ jobs:
         RabbitMq__Username: guest
         RabbitMq__Password: guest
 
-    - name: Run worker tests
+    - name: Run unit tests (Worker — PdfPig + Tesseract OCR)
       run: dotnet test tests/Worker.UnitTests/Worker.UnitTests.csproj --no-restore -c Release --logger "console;verbosity=detailed"
       env:
         ConnectionStrings__DefaultConnection: "Host=localhost;Port=5432;Database=pdf_processing;Username=pdf_user;Password=pdf_password"
         RabbitMq__Host: localhost
         RabbitMq__Username: guest
         RabbitMq__Password: guest
+
+    - name: Run integration tests (Testcontainers — full workflow)
+      run: dotnet test tests/IntegrationTests/IntegrationTests.csproj --no-restore -c Release --logger "console;verbosity=detailed" --filter "Category=Integration"
+      env:
+        ConnectionStrings__DefaultConnection: "Host=localhost;Port=5432;Database=pdf_processing;Username=pdf_user;Password=pdf_password"
+        RabbitMq__Host: localhost
+        RabbitMq__Username: guest
+        RabbitMq__Password: guest
+      timeout-minutes: 5
 
     - name: Build Docker images
       run: |
