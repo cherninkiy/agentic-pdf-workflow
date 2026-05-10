@@ -12,7 +12,7 @@ namespace Worker.Consumers;
 ///   1. Idempotency check — skip if message already processed
 ///   2. Optimistic lock — claim document via UPDATE WHERE status=uploaded
 ///   3. Download PDF from shared storage
-///   4. Extract text via PdfPig (fallback to Azure OCR if needed)
+///   4. Extract text via PdfPig (fallback to Tesseract OCR if needed)
 ///   5. Save extracted text + mark message processed (single transaction)
 ///
 /// On failure: throw exception → MassTransit retries with delays (5s, 30s, 60s)

@@ -27,7 +27,7 @@ public class DocumentsController : ControllerBase
     }
 
     [HttpPost("upload")]
-    [RequestSizeLimit(4 * 1024 * 1024)] // 4 MB limit (Azure F0 tier)
+    [RequestSizeLimit(4 * 1024 * 1024)] // 4 MB limit (MVP stage)
     public async Task<IActionResult> Upload(IFormFile file, CancellationToken cancellationToken)
     {
         if (file == null || file.Length == 0)

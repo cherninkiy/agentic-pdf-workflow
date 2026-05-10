@@ -16,7 +16,7 @@ using Worker.Storage;
 //   1. Idempotency check (processed_messages table)
 //   2. Optimistic lock (UPDATE documents SET status='processing' WHERE status='uploaded')
 //   3. Download PDF from storage
-//   4. Extract text via PdfPig (fallback to Azure OCR if empty)
+//   4. Extract text via PdfPig (fallback to Tesseract OCR if empty)
 //   5. Save text + mark message processed in one transaction
 //   6. ACK on success, throw on failure → MassTransit retry with delays
 
