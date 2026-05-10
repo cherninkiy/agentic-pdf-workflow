@@ -1,9 +1,11 @@
 using ApiGateway.BackgroundServices;
 using ApiGateway.Data;
 using ApiGateway.Extensions;
+using ApiGateway.HealthChecks;
 using ApiGateway.Services;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
+using Prometheus;
 
 // ------------------------------------------------------------
 // Program.cs – Application entry point
@@ -61,6 +63,16 @@ if (!string.IsNullOrWhiteSpace(rabbitHost) && !builder.Environment.IsDevelopment
     });
 }
 
+// ── Health Checks ──
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<AppDbContext>("postgres");
+// RabbitMQ health check (custom) — only when configured
+if (!string.IsNullOrWhiteSpace(rabbitHost) && !builder.Environment.IsDevelopment())
+{
+    builder.Services.AddHealthChecks()
+        .AddCheck<RabbitMqHealthCheck>("rabbitmq");
+}
+
 // ── Application Services ──
 // DocumentService orchestrates upload → outbox → file storage.
 // OutboxPublisher polls unprocessed outbox rows every 5s and publishes via MassTransit.
@@ -94,6 +106,14 @@ if (app.Environment.IsDevelopment())
 }
 
 app.MapControllers();
+
+// Health check endpoints
+app.MapHealthChecks("/health/live");
+app.MapHealthChecks("/health/ready");
+
+// Prometheus metrics
+app.UseHttpMetrics();
+app.MapMetrics();
 
 app.Run();
 
