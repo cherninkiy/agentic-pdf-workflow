@@ -128,7 +128,7 @@ public async Task Consume(ConsumeContext<PdfProcessingCommand> context)
     var result = await agent.ProcessAsync(
         context.Message.DocumentId,
         context.Message.FilePath,
-        cancellationToken
+        context.CancellationToken
     );
     // сохранить результат через репозиторий
 }
@@ -143,7 +143,7 @@ public async Task Consume(ConsumeContext<PdfProcessingCommand> context)
 | Аспект | Решение в текущем MVP | План на production |
 |--------|------------------------|---------------------|
 | Межсервисная коммуникация | MassTransit | MassTransit (оставить) |
-| Оркестрация шагов обработки | Ручная (один consumer) | MAF (чекипоинты + AI‑агенты) |
+| Оркестрация шагов обработки | Ручная (один consumer) | MAF (чекпоинты + AI‑агенты) |
 | Retry/DLQ | MassTransit | MassTransit (базовый) + MAF checkpoint recovery |
 
 **Кратко:** MassTransit – правильный выбор для MVP. MAF будет добавлен, когда понадобятся **AI‑агенты и долгоживущие пайплайны** (search + retrieve + rerank + generate). Сейчас система готова к такому расширению – достаточно заменить внутреннюю логику Consumer на вызов MAF‑агента.
