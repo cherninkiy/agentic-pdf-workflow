@@ -1,17 +1,31 @@
 -- Idempotent database initialization for PDF Processing System
 -- This script can be safely re-run (uses CREATE TABLE IF NOT EXISTS)
 
+-- Lookup table for human-readable status names.
+-- Services use INTEGER status internally (no JOIN needed).
+CREATE TABLE IF NOT EXISTS document_statuses (
+    id INTEGER PRIMARY KEY,
+    name VARCHAR(20) NOT NULL UNIQUE
+);
+
+-- Seed statuses (matching DocumentStatus enum values)
+INSERT INTO document_statuses (id, name) VALUES
+    (0, 'Uploaded'),
+    (1, 'Processing'),
+    (2, 'Completed'),
+    (3, 'Failed')
+ON CONFLICT (id) DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS documents (
     id UUID PRIMARY KEY,
     filename VARCHAR(512) NOT NULL,
-    status VARCHAR(20) NOT NULL DEFAULT 'uploaded',
+    status INTEGER NOT NULL DEFAULT 0 REFERENCES document_statuses(id),
     file_path VARCHAR(1024) NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     started_at TIMESTAMP WITH TIME ZONE,
     completed_at TIMESTAMP WITH TIME ZONE,
     error_message TEXT,
-    extracted_text TEXT,
-    CONSTRAINT chk_status CHECK (status IN ('uploaded', 'processing', 'completed', 'failed'))
+    extracted_text TEXT
 );
 
 CREATE TABLE IF NOT EXISTS outbox (
