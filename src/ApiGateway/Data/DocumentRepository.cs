@@ -43,15 +43,15 @@ public class DocumentRepository : IDocumentRepository
         if (toStatus == DocumentStatus.Processing)
         {
             rows = await _context.Database.ExecuteSqlRawAsync(
-                "UPDATE documents SET status = {0}, started_at = {1} WHERE id = {2} AND status = {3}",
-                toStatusInt, DateTime.UtcNow, id, fromStatusInt,
+                "UPDATE documents SET status = {0}, started_at = NOW() WHERE id = {1} AND status = {2}",
+                toStatusInt, id, fromStatusInt,
                 cancellationToken);
         }
         else
         {
             rows = await _context.Database.ExecuteSqlRawAsync(
-                "UPDATE documents SET status = {0}, completed_at = {1}, error_message = {2} WHERE id = {3} AND status = {4}",
-                toStatusInt, DateTime.UtcNow,
+                "UPDATE documents SET status = {0}, completed_at = NOW(), error_message = {1} WHERE id = {2} AND status = {3}",
+                toStatusInt,
                 errorMessage ?? (object)DBNull.Value,
                 id, fromStatusInt,
                 cancellationToken);
@@ -63,10 +63,9 @@ public class DocumentRepository : IDocumentRepository
     public async Task UpdateTextAsync(Guid id, string? extractedText, DocumentStatus status, CancellationToken cancellationToken = default)
     {
         await _context.Database.ExecuteSqlRawAsync(
-            "UPDATE documents SET extracted_text = {0}, status = {1}, completed_at = {2} WHERE id = {3}",
+            "UPDATE documents SET extracted_text = {0}, status = {1}, completed_at = NOW() WHERE id = {2}",
             extractedText ?? (object)DBNull.Value,
             (int)status,
-            DateTime.UtcNow,
             id,
             cancellationToken);
     }

@@ -47,8 +47,14 @@ public class TesseractOcrService : IOCRService
             await RunProcessAsync("pdftoppm", $"-png -r 300 \"{pdfPath}\" \"{imagePrefix}\"", cancellationToken);
 
             // Get list of generated page images
+            // Sort numerically to avoid lexicographic ordering (page-10 before page-2)
             var pageFiles = Directory.GetFiles(tempDir, "page-*.png")
-                .OrderBy(f => f)
+                .OrderBy(f =>
+                {
+                    var fileName = Path.GetFileNameWithoutExtension(f);
+                    var numberPart = fileName.Split('-').Last();
+                    return int.TryParse(numberPart, out var n) ? n : 0;
+                })
                 .ToList();
 
             if (pageFiles.Count == 0)
@@ -129,10 +135,22 @@ public class TesseractOcrService : IOCRService
         using var process = new Process { StartInfo = psi };
         process.Start();
 
-        var stdOut = await process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var stdErr = await process.StandardError.ReadToEndAsync(cancellationToken);
+        // Read stdout/stderr in parallel to avoid buffer deadlock
+        var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
+        var errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
 
-        await process.WaitForExitAsync(cancellationToken);
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            process.Kill(entireProcessTree: true);
+            throw;
+        }
+
+        var stdOut = await outputTask;
+        var stdErr = await errorTask;
 
         if (process.ExitCode != 0)
         {
