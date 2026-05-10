@@ -2,7 +2,7 @@
 
 ## Обзор
 
-Этот репозиторий реализует минимальную систему обработки PDF‑документов в соответствии с архитектурным решением (ADR) и планом реализации. Система состоит из двух сервисов:
+Этот репозиторий реализует систему обработки PDF‑документов в соответствии с архитектурным решением [ADR001](docs/adr/ADR001_PDF_Processing_Architecture.md) и планом реализации [roadmap](docs/roadmap.md). Система состоит из двух сервисов:
 
 | Сервис | Ответственность |
 |--------|-----------------|
@@ -19,10 +19,15 @@
   /Worker              – .NET Worker (MassTransit consumer)
   /Shared              – Контракты, модели и интерфейсы
 /tests
-  /ApiGateway.UnitTests – Юнит‑ и smoke‑тесты API
-  /Worker.UnitTests     – Юнит‑тесты воркера
+  /ApiGateway.UnitTests – Юнит‑ и smoke‑тесты API (8 тестов)
+  /Worker.UnitTests     – Юнит‑тесты воркера (7 тестов, включая Tesseract OCR)
+  /IntegrationTests     – Интеграционные тесты через Testcontainers (4 теста)
+/samples                – Примеры PDF для тестирования (текстовый, скан, инвойс)
 /.github
-  /workflows/ci.yml     – CI‑pipeline (сборка, тесты, Docker‑образы)
+  /workflows/ci.yml     – CI‑pipeline (build, test x3, Docker образы)
+docs/
+  /adr/                 – Архитектурные решения (ADR-001)
+  /roadmap.md           – План реализации
 docker-compose.yml      – Оркестрация PostgreSQL, RabbitMQ, ApiGateway и Worker
 db/init.sql             – Инициализационный скрипт БД
 ```
@@ -74,9 +79,12 @@ dotnet test
 
 GitHub Actions (`.github/workflows/ci.yml`) выполняет:
 
-1. Восстановление и сборку всех проектов.
-2. Запуск юнит‑тестов для обоих сервисов.
-3. Сборку Docker‑образов `pdf-api-gateway` и `pdf-worker`.
+1. Установку системных зависимостей (Tesseract OCR + poppler-utils).
+2. Восстановление и сборку всех проектов.
+3. Запуск юнит‑тестов ApiGateway (8 тестов).
+4. Запуск юнит‑тестов Worker (7 тестов: обработка, OCR, отмена).
+5. Запуск интеграционных тестов через Testcontainers (4 теста: PostgreSQL + RabbitMQ).
+6. Сборку Docker‑образов `pdf-api-gateway` и `pdf-worker`.
 
 Пайплайн запускается при каждом push/PR в ветку `main` и в feature‑ветки.
 
@@ -88,7 +96,7 @@ GitHub Actions (`.github/workflows/ci.yml`) выполняет:
 
 | Что планировалось через MAF | Кто реализовал |
 |----------------------------|----------------|
-| Ретри-механизм (задержки 5s → 30s → 60s) | MassTransit `.UseMessageRetry()` |
+| Ретраи-механизм (задержки 5s → 30s → 60s) | MassTransit `.UseMessageRetry()` |
 | Dead Letter Queue | MassTransit встроенная `_error` очередь |
 | Graceful Shutdown | MassTransit сам обрабатывает SIGTERM |
 | ACK/nack управление | MassTransit автоматически |
