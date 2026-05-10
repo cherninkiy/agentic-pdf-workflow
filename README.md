@@ -80,6 +80,27 @@ GitHub Actions (`.github/workflows/ci.yml`) выполняет:
 
 Пайплайн запускается при каждом push/PR в ветку `main` и в feature‑ветки.
 
+## MAF vs MassTransit — что используется вместо Microsoft Agent Framework
+
+В ADR-001 планировалось использовать **Microsoft Agent Framework (MAF)** для оркестрации шагов обработки документа: `DownloadDocument → UpdateStatusProcessing → ExtractTextStep → SaveTextAndComplete`. Каждый шаг — независимая единица с собственным checkpoint.
+
+На практике `MassTransit` взял на себя бóльшую часть того, что должен был дать MAF:
+
+| Что планировалось через MAF | Кто реализовал |
+|----------------------------|----------------|
+| Ретри-механизм (задержки 5s → 30s → 60s) | MassTransit `.UseMessageRetry()` |
+| Dead Letter Queue | MassTransit встроенная `_error` очередь |
+| Graceful Shutdown | MassTransit сам обрабатывает SIGTERM |
+| ACK/nack управление | MassTransit автоматически |
+| Ограничение параллелизма (prefetch=1) | MassTransit `e.PrefetchCount` |
+
+Что MAF бы дал дополнительно (и пока не реализовано):
+
+- **Чекпоинты на каждый шаг** — при падении Worker после PdfPig, но до сохранения в БД, ретрай начинается с нуля (качка PDF + парсинг). MAF позволил бы продолжить с шага сохранения.
+- **Декларативное расширение** — добавить новый шаг (NER, перевод, суммаризация) можно было бы простым добавлением Agent'а в workflow. Сейчас для этого нужен отдельный consumer или правка `DocumentProcessingService`.
+
+**Вывод:** для MVP MassTransit достаточен. Чекпоинты станут актуальны, когда появится много шагов или дорогие внешние вызовы. MassTransit Sagas — возможная альтернатива MAF для production.
+
 ## Выбор OCR-решения
 
 Для распознавания текста в отсканированных PDF используется **Tesseract OCR** (локальный, запускается через `pdftoppm` + `tesseract`).
