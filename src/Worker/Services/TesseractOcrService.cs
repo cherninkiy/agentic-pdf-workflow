@@ -31,6 +31,8 @@ public class TesseractOcrService : IOCRService
 
     public async Task<string?> ExtractTextAsync(byte[] pdfContent, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var tempDir = Path.Combine(Path.GetTempPath(), $"ocr_{Guid.NewGuid()}");
         Directory.CreateDirectory(tempDir);
 
