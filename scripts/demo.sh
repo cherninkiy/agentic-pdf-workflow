@@ -35,6 +35,13 @@ pass()  { echo -e "  ${GREEN}PASS${NC} $1"; }
 fail()  { echo -e "  ${RED}FAIL${NC} $1"; }
 info()  { echo -e "${YELLOW}[INFO]${NC} $1"; }
 
+# ── Load .env if present ──
+if [ -f "$PROJECT_DIR/.env" ]; then
+    set -a
+    source "$PROJECT_DIR/.env"
+    set +a
+fi
+
 # ── Step 1: Build and start services ──
 info "Step 1: Starting infrastructure..."
 cd "$PROJECT_DIR"
@@ -53,7 +60,7 @@ info "Step 2: Starting API Gateway..."
 cd "$PROJECT_DIR/src/ApiGateway"
 ASPNETCORE_URLS="http://0.0.0.0:5000" \
 ASPNETCORE_ENVIRONMENT="Development" \
-ConnectionStrings__DefaultConnection="Host=localhost;Port=5432;Database=pdf_processing;Username=pdf_user;Password=pdf_password" \
+ConnectionStrings__DefaultConnection="Host=localhost;Port=${POSTGRES_PORT:-5432};Database=${POSTGRES_DB:-pdf_processing};Username=${POSTGRES_USER:-pdf_user};Password=${POSTGRES_PASSWORD:-pdf_password}" \
     dotnet run --no-build &
 GATEWAY_PID=$!
 cd "$PROJECT_DIR"
@@ -65,10 +72,10 @@ sleep 3
 info "Step 3: Starting Worker..."
 cd "$PROJECT_DIR/src/Worker"
 DOTNET_ENVIRONMENT="Development" \
-ConnectionStrings__DefaultConnection="Host=localhost;Port=5432;Database=pdf_processing;Username=pdf_user;Password=pdf_password" \
+ConnectionStrings__DefaultConnection="Host=localhost;Port=${POSTGRES_PORT:-5432};Database=${POSTGRES_DB:-pdf_processing};Username=${POSTGRES_USER:-pdf_user};Password=${POSTGRES_PASSWORD:-pdf_password}" \
 RabbitMq__Host="localhost" \
-RabbitMq__Username="guest" \
-RabbitMq__Password="guest" \
+RabbitMq__Username="${RABBITMQ_USER:-pdf_user}" \
+RabbitMq__Password="${RABBITMQ_PASSWORD:-pdf_password}" \
 Storage__LocalPath="/tmp/pdf-storage" \
     dotnet run --no-build &
 WORKER_PID=$!
