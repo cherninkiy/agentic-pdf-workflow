@@ -104,6 +104,7 @@ export ConnectionStrings__DefaultConnection="$PG_CONN"
 export RabbitMq__Host="$RABBIT_HOST"
 export RabbitMq__Username="$RABBIT_USER"
 export RabbitMq__Password="$RABBIT_PASS"
+export Storage__LocalPath="/tmp/pdf-storage"
 
 cd "$PROJECT_DIR/src/ApiGateway"
 dotnet run --no-launch-profile > "$LOG_DIR/gateway.log" 2>&1 &
