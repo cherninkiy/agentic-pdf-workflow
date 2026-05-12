@@ -29,7 +29,8 @@ var host = Host.CreateDefaultBuilder(args)
 
         // ── Database (PostgreSQL via EF Core) ──
         services.AddDbContext<AppDbContext>(options =>
-            options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
+            options.UseNpgsql(configuration.GetConnectionString("DefaultConnection"))
+                   .UseSnakeCaseNamingConvention());
 
         // ── Repository ──
         services.AddScoped<IDocumentRepository, DocumentRepository>();
