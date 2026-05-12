@@ -41,16 +41,18 @@ public class DocumentRepository : IDocumentRepository
         {
             rows = await _context.Database.ExecuteSqlRawAsync(
                 "UPDATE documents SET status = {0}, started_at = {1} WHERE id = {2} AND status = {3}",
-                toStatusInt, DateTime.UtcNow, id, fromStatusInt,
+                new object[] { toStatusInt, DateTime.UtcNow, id, fromStatusInt },
                 cancellationToken);
         }
         else
         {
             rows = await _context.Database.ExecuteSqlRawAsync(
                 "UPDATE documents SET status = {0}, completed_at = {1}, error_message = {2} WHERE id = {3} AND status = {4}",
-                toStatusInt, DateTime.UtcNow,
-                errorMessage ?? (object)DBNull.Value,
-                id, fromStatusInt,
+                new object[] {
+                    toStatusInt, DateTime.UtcNow,
+                    errorMessage ?? (object)DBNull.Value,
+                    id, fromStatusInt
+                },
                 cancellationToken);
         }
 
@@ -61,10 +63,7 @@ public class DocumentRepository : IDocumentRepository
     {
         await _context.Database.ExecuteSqlRawAsync(
             "UPDATE documents SET extracted_text = {0}, status = {1}, completed_at = {2} WHERE id = {3}",
-            extractedText ?? (object)DBNull.Value,
-            (int)status,
-            DateTime.UtcNow,
-            id,
+            new object[] { extractedText ?? (object)DBNull.Value, (int)status, DateTime.UtcNow, id },
             cancellationToken);
     }
 

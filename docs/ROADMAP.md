@@ -120,22 +120,21 @@
 
 ---
 
-## День 6: Production Boost – Мониторинг и надёжность
+## День 6: Production Boost – Мониторинг и надёжность ✅
 
 **Цель:** Добавить наблюдаемость и усилить стабильность.
 
 ### Задачи
-1. **Prometheus + Grafana**
-   - Добавить метрики: `document_upload_total`, `document_processing_duration_seconds` (гистограмма), `queue_length`, `ocr_errors_total`.
-   - Экспорт метрик через `dotnet-counters` или Prometheus-net.
-   - Развернуть Grafana с предустановленными дашбордами.
-2. **Health Checks**
-   - `/health/ready` – проверка БД, RabbitMQ, MinIO.
+1. **Prometheus + Grafana** ✅
+   - Добавить метрики: `document_upload_total` (counter), `document_processing_duration_seconds` (histogram p50/p95).
+   - Экспорт метрик через prometheus-net: `/metrics` на Gateway (5000) + MetricServer на Worker (5091).
+   - Развернуть Grafana с преднастроенным дашбордом `grafana/dashboards/pdf-processing.json`.
+2. **Health Checks** ✅
+   - `/health/ready` – проверка БД (EF Core) и RabbitMQ (rabbitmq-diagnostics).
    - `/health/live` – проверка процесса.
-   - Включить в Docker Compose с прозрачным пробросом (или для k8s-readiness probe).
+   - Добавлен кастомный `RabbitMqHealthCheck` в `src/ApiGateway/HealthChecks/`.
 3. **Graceful Shutdown** ✅ (реализовано через MassTransit)
    - MassTransit сам обрабатывает SIGTERM и завершает текущие сообщения.
-   - Дополнительно: ожидание активных запросов в Gateway.
 
 **Результат:** Систему можно мониторить, алертить, безопасно останавливать.
 
@@ -146,19 +145,18 @@
 **Цель:** Показать расширяемость и production-готовность.
 
 ### Задачи
-1. **Параллелизация OCR страниц** (отложено — записано в README)
-   - Заменить `foreach` на `Parallel.ForEachAsync` + `SemaphoreSlim` для параллельной обработки страниц Tesseract.
-2. **Базовый AI-роутинг**
-   - Создать новый agent-подписчик на событие `document.completed` (можно через отдельную очередь `routing_queue`).
-   - Использовать простую LLM (например, через Semantic Kernel с локальной моделью или просто BERT-классификатор из ML.NET) для категоризации текста на `invoice`, `contract`, `report`.
-   - Результат сохранять в отдельное поле `document_category`.
-   - Это не является требованием, но показывает расширяемость.
-3. **Финальное тестирование и документация**
-   - Обновить ADR с финальными решениями.
-   - Подготовить `README.md` с инструкцией по запуску, переменными окружения, лимитами.
-   - Видео-демо (по желанию).
+1. **Параллелизация OCR страниц** ✅
+   - Заменить `foreach` на `Parallel.ForEachAsync` + `SemaphoreSlim` (ProcessorCount / 2).
+   - `lock()` для thread-safe добавления результатов.
+   - Ускорение на multi-page документах (каждый tesseract процесс идёт параллельно).
+2. **Базовый AI-роутинг** (отложено)
+   - Создать новый agent-подписчик на событие `document.completed`.
+   - Использовать Semantic Kernel с LLM для категоризации текста (`invoice`, `contract`, `report`).
+3. **Финальное тестирование и документация** ✅
+   - Документация: TASK_COMPLETENESS.md + PRODUCTION_READINESS.md.
+   - Demo-скрипт: `scripts/demo.sh` — поднимает сервисы, загружает PDF из samples/, поллит результат.
 
-**Результат:** Готовый production-ready прототип, который можно показывать как промышленный образец.
+**Результат:** OCR ускорен, документация полная, demo-скрипт для быстрой проверки.
 
 ---
 
@@ -171,7 +169,7 @@
 | 3 | Worker (PdfPig, статусы, идемпотентность) | Базовая обработка текста, статусная модель, ACK/nack | ✅ |
 | 4 | Retry + Tesseract OCR | Retry механизм с задержками, интеграция Tesseract, статус `failed` | ✅ |
 | 5 | MAF workflow + DLQ обработка | Законченный MVP, MassTransit (замена MAF), обработчик DLQ (частично) | ⏳ |
-| 6 | Мониторинг + надёжность | Prometheus, Grafana, health checks, graceful shutdown | 🔄 (частично) |
+| 6 | Мониторинг + надёжность | Prometheus, Grafana, health checks, graceful shutdown | ✅ |
 | 7 | Параллелизация OCR + AI-роутинг | Ускорение OCR, демонстрация расширяемости | 🔄 (отложено) |
 
 **Рекомендация:** Если MAF в preview вызывает проблемы, заменить на MassTransit Sagas – это надёжнее. Но roadmap оставляет технологический выбор за разработчиком.
