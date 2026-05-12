@@ -23,19 +23,14 @@ var builder = WebApplication.CreateBuilder(args);
         // Use an in‑memory database for Development and Testing environments to avoid external dependencies.
         // In other environments (e.g., Production) use PostgreSQL when a connection string is provided.
         var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-        if (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Testing"))
-        {
-            builder.Services.AddDbContext<AppDbContext>(options =>
-                options.UseInMemoryDatabase("TestDb"));
-        }
-        else if (!string.IsNullOrWhiteSpace(connectionString))
+        if (!string.IsNullOrWhiteSpace(connectionString))
         {
             builder.Services.AddDbContext<AppDbContext>(options =>
                 options.UseNpgsql(connectionString));
         }
         else
         {
-            // Fallback to in‑memory if no connection string is provided.
+            // Fallback to in‑memory for Development/Testing without a real database.
             builder.Services.AddDbContext<AppDbContext>(options =>
                 options.UseInMemoryDatabase("TestDb"));
         }
@@ -43,10 +38,10 @@ var builder = WebApplication.CreateBuilder(args);
 // ── MassTransit + RabbitMQ ──
 // Publishes PdfProcessingCommand messages. The OutboxPublisher
 // background service handles reliable delivery via the outbox table.
-// Add MassTransit only when RabbitMQ configuration is present (skip in unit tests)
+// Add MassTransit only when RabbitMQ host is configured.
+// Skip in unit tests (Testing environment) to avoid external dependencies.
 var rabbitHost = builder.Configuration.GetValue<string>("RabbitMq:Host");
-// Skip MassTransit in Development (unit test) environment to avoid external RabbitMQ dependency.
-if (!string.IsNullOrWhiteSpace(rabbitHost) && !builder.Environment.IsDevelopment())
+if (!string.IsNullOrWhiteSpace(rabbitHost) && !builder.Environment.IsEnvironment("Testing"))
 {
     builder.Services.AddMassTransit(x =>
     {
@@ -67,7 +62,7 @@ if (!string.IsNullOrWhiteSpace(rabbitHost) && !builder.Environment.IsDevelopment
 builder.Services.AddHealthChecks()
     .AddDbContextCheck<AppDbContext>("postgres");
 // RabbitMQ health check (custom) — only when configured
-if (!string.IsNullOrWhiteSpace(rabbitHost) && !builder.Environment.IsDevelopment())
+if (!string.IsNullOrWhiteSpace(rabbitHost) && !builder.Environment.IsEnvironment("Testing"))
 {
     builder.Services.AddHealthChecks()
         .AddCheck<RabbitMqHealthCheck>("rabbitmq");
@@ -78,8 +73,8 @@ if (!string.IsNullOrWhiteSpace(rabbitHost) && !builder.Environment.IsDevelopment
 // OutboxPublisher polls unprocessed outbox rows every 5s and publishes via MassTransit.
 builder.Services.AddApplicationServices(builder.Configuration);
 builder.Services.AddScoped<DocumentService>();
-// Register the OutboxPublisher only when MassTransit (RabbitMQ) is configured and not in Development.
-if (!string.IsNullOrWhiteSpace(rabbitHost) && !builder.Environment.IsDevelopment())
+// Register the OutboxPublisher only when RabbitMQ is configured (not in unit tests).
+if (!string.IsNullOrWhiteSpace(rabbitHost) && !builder.Environment.IsEnvironment("Testing"))
 {
     builder.Services.AddHostedService<OutboxPublisher>();
 }
