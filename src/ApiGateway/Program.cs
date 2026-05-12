@@ -22,15 +22,23 @@ var builder = WebApplication.CreateBuilder(args);
         // ── Database (PostgreSQL via EF Core) ──
         // Use an in‑memory database for Development and Testing environments to avoid external dependencies.
         // In other environments (e.g., Production) use PostgreSQL when a connection string is provided.
+        // In Testing environment use in-memory database (smoke tests).
+        // Otherwise use PostgreSQL if a connection string is configured,
+        // or fallback to in-memory for Development without external DB.
         var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-        if (!string.IsNullOrWhiteSpace(connectionString))
+        if (builder.Environment.IsEnvironment("Testing"))
         {
             builder.Services.AddDbContext<AppDbContext>(options =>
-                options.UseNpgsql(connectionString));
+                options.UseInMemoryDatabase("TestDb"));
+        }
+        else if (!string.IsNullOrWhiteSpace(connectionString))
+        {
+            builder.Services.AddDbContext<AppDbContext>(options =>
+                options.UseNpgsql(connectionString)
+                       .UseSnakeCaseNamingConvention());
         }
         else
         {
-            // Fallback to in‑memory for Development/Testing without a real database.
             builder.Services.AddDbContext<AppDbContext>(options =>
                 options.UseInMemoryDatabase("TestDb"));
         }

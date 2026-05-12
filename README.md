@@ -64,24 +64,29 @@ db/init.sql             – Инициализационный скрипт БД
    cd agentic-pdf-workflow
    ```
 
-2. **Запустить вспомогательные сервисы**
+2. **Собрать проекты**
+   ```bash
+   dotnet build
+   ```
+
+3. **Запустить вспомогательные сервисы**
    ```bash
    docker compose up -d postgres rabbitmq
    ```
 
-3. **Запустить API‑шлюз**
+4. **Запустить API‑шлюз**
    ```bash
    cd src/ApiGateway
    dotnet run
    ```
 
-4. **Запустить воркер** (в отдельном терминале)
+5. **Запустить воркер** (в отдельном терминале)
    ```bash
    cd src/Worker
    dotnet run
    ```
 
-5. **Взаимодействовать с API** – Swagger UI доступен по адресу `http://localhost:5000/swagger`.
+6. **Взаимодействовать с API** – Swagger UI доступен по адресу `http://localhost:5000/swagger`.
 
 ### Запуск демо-скрипта
 
