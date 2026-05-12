@@ -38,21 +38,29 @@ pass()  { echo -e "  ${GREEN}PASS${NC} $1"; }
 fail()  { echo -e "  ${RED}FAIL${NC} $1"; }
 info()  { echo -e "${YELLOW}[INFO]${NC} $1"; }
 
-# ── Cleanup on exit ──
-cleanup() {
-    info "Cleaning up..."
-    kill $GATEWAY_PID $WORKER_PID 2>/dev/null || true
-    docker compose -f "$PROJECT_DIR/docker-compose.yml" down -v 2>/dev/null || true
-    info "Done. Logs: $LOG_DIR"
-}
-trap cleanup EXIT
-
-# ── Load .env if present ──
+# ── Load .env and export all vars ──
 if [ -f "$PROJECT_DIR/.env" ]; then
     set -a
     source "$PROJECT_DIR/.env"
     set +a
 fi
+
+# ── Build connection strings ──
+PG_CONN="Host=localhost;Port=${POSTGRES_PORT:-5432};Database=${POSTGRES_DB:-pdf_processing};Username=${POSTGRES_USER:-pdf_user};Password=${POSTGRES_PASSWORD:-pdf_password}"
+RABBIT_HOST="localhost"
+RABBIT_USER="${RABBITMQ_USER:-pdf_user}"
+RABBIT_PASS="${RABBITMQ_PASSWORD:-pdf_password}"
+
+# ── Cleanup on exit ──
+cleanup() {
+    echo
+    info "Cleaning up..."
+    kill $GATEWAY_PID $WORKER_PID 2>/dev/null || true
+    sleep 1
+    docker compose -f "$PROJECT_DIR/docker-compose.yml" down -v 2>/dev/null || true
+    info "Done. Logs: $LOG_DIR"
+}
+trap cleanup EXIT
 
 # ── Step 1: Build and start infrastructure ──
 info "Step 1: Building projects..."
@@ -62,67 +70,87 @@ dotnet build src/Worker -q 2>&1 | tail -1 || true
 
 info "Starting PostgreSQL (5432) and RabbitMQ (5672, 15672)..."
 docker compose up -d postgres rabbitmq 2>/dev/null
-echo "  Ports: 5432 ← PostgreSQL | 5672 AMQP | 15672 ← RabbitMQ Management"
-echo "  Credentials: ${RABBITMQ_USER:-pdf_user} / ${RABBITMQ_PASSWORD:-pdf_password}"
+echo "  Ports:"
+echo "    5432 ← PostgreSQL"
+echo "    5672 ← RabbitMQ AMQP"
+echo "    15672 ← RabbitMQ Management"
+echo "  Credentials: ${RABBIT_USER} / ${RABBIT_PASS}"
+
+# Wait for PostgreSQL to be healthy
+info "Waiting for PostgreSQL..."
+for i in $(seq 1 15); do
+    if docker compose exec -T postgres pg_isready -U "${POSTGRES_USER:-pdf_user}" >/dev/null 2>&1; then
+        pass "PostgreSQL is ready"
+        break
+    fi
+    sleep 2
+done
+
+# Wait for RabbitMQ to be healthy
+info "Waiting for RabbitMQ..."
+for i in $(seq 1 15); do
+    if docker compose exec -T rabbitmq rabbitmq-diagnostics check_port_connectivity >/dev/null 2>&1; then
+        pass "RabbitMQ is ready"
+        break
+    fi
+    sleep 2
+done
 
 # ── Step 2: Start API Gateway ──
 info "Step 2: Starting API Gateway on :5000..."
+export ASPNETCORE_URLS="http://0.0.0.0:5000"
+export ASPNETCORE_ENVIRONMENT="Development"
+export ConnectionStrings__DefaultConnection="$PG_CONN"
+export RabbitMq__Host="$RABBIT_HOST"
+export RabbitMq__Username="$RABBIT_USER"
+export RabbitMq__Password="$RABBIT_PASS"
+
 cd "$PROJECT_DIR/src/ApiGateway"
-ASPNETCORE_URLS="http://0.0.0.0:5000" \
-ASPNETCORE_ENVIRONMENT="Development" \
-ConnectionStrings__DefaultConnection="Host=localhost;Port=${POSTGRES_PORT:-5432};Database=${POSTGRES_DB:-pdf_processing};Username=${POSTGRES_USER:-pdf_user};Password=${POSTGRES_PASSWORD:-pdf_password}" \
-RabbitMq__Host="localhost" \
-RabbitMq__Username="${RABBITMQ_USER:-pdf_user}" \
-RabbitMq__Password="${RABBITMQ_PASSWORD:-pdf_password}" \
-    dotnet run --no-launch-profile > "$LOG_DIR/gateway.log" 2>&1 &
+dotnet run --no-launch-profile > "$LOG_DIR/gateway.log" 2>&1 &
 GATEWAY_PID=$!
 cd "$PROJECT_DIR"
 
 # Wait for gateway to be ready
-for i in $(seq 1 10); do
+for i in $(seq 1 15); do
     if curl -sf "$API_URL/health/live" >/dev/null 2>&1; then break; fi
     sleep 1
 done
 
-# ── Step 3: Start Worker ──
-info "Step 3: Starting Worker (connects to localhost:5672)..."
-cd "$PROJECT_DIR/src/Worker"
-DOTNET_ENVIRONMENT="Development" \
-ConnectionStrings__DefaultConnection="Host=localhost;Port=${POSTGRES_PORT:-5432};Database=${POSTGRES_DB:-pdf_processing};Username=${POSTGRES_USER:-pdf_user};Password=${POSTGRES_PASSWORD:-pdf_password}" \
-RabbitMq__Host="localhost" \
-RabbitMq__Username="${RABBITMQ_USER:-pdf_user}" \
-RabbitMq__Password="${RABBITMQ_PASSWORD:-pdf_password}" \
-Storage__LocalPath="/tmp/pdf-storage" \
-    dotnet run --no-launch-profile > "$LOG_DIR/worker.log" 2>&1 &
-WORKER_PID=$!
-cd "$PROJECT_DIR"
-
-sleep 2
-
-# ── Step 4: Health checks ──
-info "Step 4: Checking health endpoints..."
-HEALTH_OK=true
-
 if curl -sf "$API_URL/health/live" >/dev/null 2>&1; then
     pass "Gateway /health/live"
 else
-    fail "Gateway /health/live"
-    HEALTH_OK=false
-fi
-
-if curl -sf "$API_URL/swagger" >/dev/null 2>&1; then
-    pass "Swagger UI (http://localhost:5000/swagger)"
-else
-    echo "  Swagger not available (expected if swagger disabled)"
-fi
-
-if [ "$HEALTH_OK" = false ]; then
-    echo
     fail "Gateway did not start. Check logs: $LOG_DIR/gateway.log"
     exit 1
 fi
 
+# ── Step 3: Start Worker ──
+info "Step 3: Starting Worker (connects to $RABBIT_HOST:5672)..."
+cd "$PROJECT_DIR/src/Worker"
+export DOTNET_ENVIRONMENT="Development"
+export ConnectionStrings__DefaultConnection="$PG_CONN"
+export RabbitMq__Host="$RABBIT_HOST"
+export RabbitMq__Username="$RABBIT_USER"
+export RabbitMq__Password="$RABBIT_PASS"
+export Storage__LocalPath="/tmp/pdf-storage"
+
+dotnet run --no-launch-profile > "$LOG_DIR/worker.log" 2>&1 &
+WORKER_PID=$!
+cd "$PROJECT_DIR"
+
+sleep 3
+
+# ── Step 4: Health checks ──
+echo
+info "Step 4: Checking endpoints..."
+if curl -sf "$API_URL/swagger" >/dev/null 2>&1; then
+    pass "Swagger UI (http://localhost:5000/swagger)"
+fi
+if curl -sf "$API_URL/health/live" >/dev/null 2>&1; then
+    pass "Gateway /health/live"
+fi
+
 # ── Step 5: Upload sample documents ──
+echo
 info "Step 5: Uploading sample documents..."
 RESULTS_DIR=$(mktemp -d)
 declare -A DOC_IDS
@@ -150,12 +178,9 @@ done
 
 # ── Step 6: Poll for processing results ──
 echo
-info "Step 6: Waiting for processing..."
-echo "  Worker checks RabbitMQ every 5s (OutboxPublisher)"
-echo "  Polling /text/{id} until each document completes..."
-echo
+info "Step 6: Waiting for processing (polling /text/{id} every 5s)..."
 
-MAX_POLLS=24        # 24 × 5s = 2 min timeout (OCR + Tesseract)
+MAX_POLLS=24
 POLL_INTERVAL=5
 
 ALL_DONE=false
@@ -174,7 +199,7 @@ while [ "$ALL_DONE" = false ] && [ $CLOCK -lt $MAX_POLLS ]; do
             TEXT_LEN=$(echo "$BODY" | jq '.extractedText | length' 2>/dev/null || echo "0")
             echo "  ✓ $pdf_name → COMPLETED (${TEXT_LEN} chars)"
             echo "$BODY" | jq -r '.extractedText' > "$RESULTS_DIR/${pdf_name%.pdf}.txt" 2>/dev/null || true
-            unset DOC_IDS["$pdf_name"]   # remove from polling list
+            unset DOC_IDS["$pdf_name"]
         elif [ "$HTTP_CODE" = "202" ]; then
             STATUS=$(echo "$BODY" | jq -r '.status' 2>/dev/null || echo "processing")
             echo "  ⟳ $pdf_name → $STATUS"
@@ -204,26 +229,25 @@ echo
 info "Step 7: Final document statuses..."
 LIST_RESPONSE=$(curl -s "$API_URL/list" 2>/dev/null || echo "[]")
 echo "$LIST_RESPONSE" | jq -r '
-    .[] | "  [\(.status)] \(.filename) — \(.created_at | .[0:10])"
+    .[] | "  [\(.status)] \(.filename) — \(.created_at // "?")"
 ' 2>/dev/null || echo "  (empty)"
 DOC_COUNT=$(echo "$LIST_RESPONSE" | jq length 2>/dev/null || echo "0")
-SUCCESS_COUNT=$(echo "$LIST_RESPONSE" | jq '[.[] | select(.status == "Completed")] | length' 2>/dev/null || echo "0")
-FAIL_COUNT=$(echo "$LIST_RESPONSE" | jq '[.[] | select(.status == "Failed")] | length' 2>/dev/null || echo "0")
+SUCCESS_COUNT=$(echo "$LIST_RESPONSE" | jq '[.[] | select(.status | . == "Completed" or . == 2)] | length' 2>/dev/null || echo "0")
+FAIL_COUNT=$(echo "$LIST_RESPONSE" | jq '[.[] | select(.status | . == "Failed" or . == 3)] | length' 2>/dev/null || echo "0")
 
 # ── Summary ──
 echo
 info "=== Demo Summary ==="
 echo "  API Gateway:       http://localhost:5000"
 echo "  Swagger UI:        http://localhost:5000/swagger"
-echo "  RabbitMQ Mgmt:     http://localhost:15672 (${RABBITMQ_USER:-pdf_user} / ${RABBITMQ_PASSWORD:-pdf_password})"
+echo "  RabbitMQ Mgmt:     http://localhost:15672 ($RABBIT_USER / $RABBIT_PASS)"
 echo "  Documents:         $DOC_COUNT total | ${SUCCESS_COUNT} completed | ${FAIL_COUNT} failed"
 echo "  Logs:              $LOG_DIR/"
-if [ -d "$RESULTS_DIR" ]; then
+if [ -d "$RESULTS_DIR" ] && ls "$RESULTS_DIR"/*.txt >/dev/null 2>&1; then
     echo "  Extracted text:    $RESULTS_DIR/"
+    echo "  Sample text:       $(head -80 "$RESULTS_DIR"/*.txt 2>/dev/null | tr '\n' ' ' | head -c 120)..."
 fi
 echo
 echo "  Press Enter to stop all services and clean up."
 read -r
 echo
-
-wait
