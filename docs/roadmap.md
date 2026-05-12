@@ -120,22 +120,21 @@
 
 ---
 
-## День 6: Production Boost – Мониторинг и надёжность
+## День 6: Production Boost – Мониторинг и надёжность ✅
 
 **Цель:** Добавить наблюдаемость и усилить стабильность.
 
 ### Задачи
-1. **Prometheus + Grafana**
-   - Добавить метрики: `document_upload_total`, `document_processing_duration_seconds` (гистограмма), `queue_length`, `ocr_errors_total`.
-   - Экспорт метрик через `dotnet-counters` или Prometheus-net.
-   - Развернуть Grafana с предустановленными дашбордами.
-2. **Health Checks**
-   - `/health/ready` – проверка БД, RabbitMQ, MinIO.
+1. **Prometheus + Grafana** ✅
+   - Добавить метрики: `document_upload_total` (counter), `document_processing_duration_seconds` (histogram p50/p95).
+   - Экспорт метрик через prometheus-net: `/metrics` на Gateway (5000) + MetricServer на Worker (5091).
+   - Развернуть Grafana с преднастроенным дашбордом `grafana/dashboards/pdf-processing.json`.
+2. **Health Checks** ✅
+   - `/health/ready` – проверка БД (EF Core) и RabbitMQ (rabbitmq-diagnostics).
    - `/health/live` – проверка процесса.
-   - Включить в Docker Compose с прозрачным пробросом (или для k8s-readiness probe).
+   - Добавлен кастомный `RabbitMqHealthCheck` в `src/ApiGateway/HealthChecks/`.
 3. **Graceful Shutdown** ✅ (реализовано через MassTransit)
    - MassTransit сам обрабатывает SIGTERM и завершает текущие сообщения.
-   - Дополнительно: ожидание активных запросов в Gateway.
 
 **Результат:** Систему можно мониторить, алертить, безопасно останавливать.
 
@@ -171,7 +170,7 @@
 | 3 | Worker (PdfPig, статусы, идемпотентность) | Базовая обработка текста, статусная модель, ACK/nack | ✅ |
 | 4 | Retry + Tesseract OCR | Retry механизм с задержками, интеграция Tesseract, статус `failed` | ✅ |
 | 5 | MAF workflow + DLQ обработка | Законченный MVP, MassTransit (замена MAF), обработчик DLQ (частично) | ⏳ |
-| 6 | Мониторинг + надёжность | Prometheus, Grafana, health checks, graceful shutdown | 🔄 (частично) |
+| 6 | Мониторинг + надёжность | Prometheus, Grafana, health checks, graceful shutdown | ✅ |
 | 7 | Параллелизация OCR + AI-роутинг | Ускорение OCR, демонстрация расширяемости | 🔄 (отложено) |
 
 **Рекомендация:** Если MAF в preview вызывает проблемы, заменить на MassTransit Sagas – это надёжнее. Но roadmap оставляет технологический выбор за разработчиком.
