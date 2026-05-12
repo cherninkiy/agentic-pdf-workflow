@@ -1,39 +1,32 @@
-using System.Diagnostics;
+using System.Net.Sockets;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace ApiGateway.HealthChecks;
 
 /// <summary>
-/// Health check for RabbitMQ using rabbitmq-diagnostics CLI.
-/// Returns Healthy if the broker is accepting connections.
+/// Health check for RabbitMQ using TCP connectivity check.
+/// Tries to connect to the RabbitMQ port (default 5672) to verify it's reachable.
 /// </summary>
 public class RabbitMqHealthCheck : IHealthCheck
 {
+    private readonly string _host;
+    private readonly int _port;
+
+    public RabbitMqHealthCheck(string host = "rabbitmq", int port = 5672)
+    {
+        _host = host;
+        _port = port;
+    }
+
     public async Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            using var process = new Process
-            {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = "rabbitmq-diagnostics",
-                    Arguments = "check_port_connectivity",
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                }
-            };
-
-            process.Start();
-            await process.WaitForExitAsync(cancellationToken);
-
-            return process.ExitCode == 0
-                ? HealthCheckResult.Healthy("RabbitMQ is accepting connections")
-                : HealthCheckResult.Unhealthy($"RabbitMQ diagnostics exit code: {process.ExitCode}");
+            using var tcpClient = new TcpClient();
+            await tcpClient.ConnectAsync(_host, _port, cancellationToken);
+            return HealthCheckResult.Healthy($"RabbitMQ port {_port} is reachable on {_host}");
         }
         catch (Exception ex)
         {

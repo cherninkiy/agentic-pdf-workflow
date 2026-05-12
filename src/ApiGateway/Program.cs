@@ -105,14 +105,20 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+// Prometheus metrics — must be before MapControllers to capture request metrics
+app.UseHttpMetrics();
+
 app.MapControllers();
 
 // Health check endpoints
-app.MapHealthChecks("/health/live");
+// /health/live: quick probe, runs no dependency checks
+app.MapHealthChecks("/health/live", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = _ => false
+});
+// /health/ready: checks all dependencies (Postgres, RabbitMQ)
 app.MapHealthChecks("/health/ready");
 
-// Prometheus metrics
-app.UseHttpMetrics();
 app.MapMetrics();
 
 app.Run();

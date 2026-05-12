@@ -90,7 +90,7 @@ var host = Host.CreateDefaultBuilder(args)
 
 // ── Prometheus metrics server ──
 // Serves /metrics on a separate port so Prometheus can scrape worker metrics
-var metricServer = new MetricServer(port: 5091);
+using var metricServer = new MetricServer(port: 5091);
 metricServer.Start();
 
 // Auto-create database tables (Dev only)
