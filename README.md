@@ -2,7 +2,7 @@
 
 ## Обзор
 
-Этот репозиторий реализует систему обработки PDF‑документов в соответствии с архитектурным решением [ADR001](docs/adr/ADR001_PDF_Processing_Architecture.md) и планом реализации [roadmap](docs/roadmap.md). Система состоит из двух сервисов:
+Этот репозиторий реализует систему обработки PDF‑документов в соответствии с архитектурным решением [ADR001](docs/adr/ADR001_PDF_Processing_Architecture.md) и планом реализации [ROADMAP](docs/ROADMAP.md). Система состоит из двух сервисов:
 
 | Сервис | Ответственность |
 |--------|-----------------|
@@ -23,14 +23,30 @@
   /Worker.UnitTests     – Юнит‑тесты воркера (7 тестов, включая Tesseract OCR)
   /IntegrationTests     – Интеграционные тесты через Testcontainers (4 теста)
 /samples                – Примеры PDF для тестирования (текстовый, скан, инвойс)
+/scripts                – Вспомогательные скрипты (demo.sh)
 /.github
   /workflows/ci.yml     – CI‑pipeline (build, test x3, Docker образы)
 docs/
   /adr/                 – Архитектурные решения (ADR-001)
-  /roadmap.md           – План реализации
+  /ROADMAP.md           – План реализации
+  /TASK_COMPLETENESS.md – Отчёт о полноте реализации
+  /PRODUCTION_READINESS.md – Оценка production-готовности
+/grafana
+  /dashboards/          – Преднастроенный дашборд Grafana
+/prometheus
+  /prometheus.yml       – Конфигурация сбора метрик
 docker-compose.yml      – Оркестрация PostgreSQL, RabbitMQ, ApiGateway и Worker
 db/init.sql             – Инициализационный скрипт БД
 ```
+
+## Документация
+
+| Документ | Описание |
+|----------|----------|
+| [ROADMAP.md](docs/ROADMAP.md) | План реализации по дням (1–7), статус выполнения |
+| [TASK_COMPLETENESS.md](docs/TASK_COMPLETENESS.md) | Сопоставление требований ТЗ с реализованным функционалом |
+| [PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md) | Оценка готовности к production: что сделано, что доделать |
+| [ADR001](docs/adr/ADR001_PDF_Processing_Architecture.md) | Архитектурное решение: выбор MAF → MassTransit, статусная модель, outbox |
 
 ## Начало работы
 
@@ -67,6 +83,22 @@ db/init.sql             – Инициализационный скрипт БД
 
 5. **Взаимодействовать с API** – Swagger UI доступен по адресу `http://localhost:5000/swagger`.
 
+### Запуск демо-скрипта
+
+Автоматизированный скрипт `scripts/demo.sh` поднимает инфраструктуру, запускает сервисы, загружает все PDF из `samples/` и выводит результат:
+
+```bash
+./scripts/demo.sh
+```
+
+Скрипт последовательно:
+1. Запускает PostgreSQL + RabbitMQ через Docker Compose
+2. Стартует Gateway и Worker в development-режиме
+3. Проверяет `/health/live` и Swagger UI
+4. Загружает все `.pdf` из `samples/`
+5. Поллит `/text/{id}` до завершения обработки
+6. Сохраняет извлечённый текст и выводит сводку
+
 ### Запуск тестов
 
 Все юнит‑ и smoke‑тесты работают с in‑memory базой и не требуют внешних сервисов.
@@ -74,6 +106,8 @@ db/init.sql             – Инициализационный скрипт БД
 ```bash
 dotnet test
 ```
+
+Результат: **19 тестов** (8 ApiGateway + 7 Worker + 4 Integration) — все проходят.
 
 ## CI‑pipeline
 
@@ -148,7 +182,7 @@ public async Task Consume(ConsumeContext<PdfProcessingCommand> context)
 
 **Кратко:** MassTransit – правильный выбор для MVP. MAF будет добавлен, когда понадобятся **AI‑агенты и долгоживущие пайплайны** (search + retrieve + rerank + generate). Сейчас система готова к такому расширению – достаточно заменить внутреннюю логику Consumer на вызов MAF‑агента.
 
-## Выбор OCR-решения
+## Выбор OCR‑решения
 
 Для распознавания текста в отсканированных PDF используется **Tesseract OCR** (локальный, запускается через `pdftoppm` + `tesseract`).
 
@@ -162,9 +196,9 @@ Tesseract работает локально, без интернета, бесп
 
 ## Известные ограничения и отложенные улучшения
 
-- **Последовательная обработка страниц OCR.** Tesseract обрабатывает страницы в цикле `foreach`. Параллелизация через `Parallel.ForEachAsync` отложена на MVP — сейчас `prefetch=1` и один consumer, узкое место не критично. Для production добавить `SemaphoreSlim` (ограничение на количество одновременных процессов tesseract).
 - **Чекпоинты на каждый шаг обработки.** Если Worker упал после PdfPig, но до сохранения в БД, ретрай начинается с нуля. Возможное решение: MassTransit Sagas.
-- **Отдельный обработчик DLQ.** Сейчас ошибки идут в `_error` очередь MassTransit без отдельного сервису‑обработчика.
+- **Отдельный обработчик DLQ.** Сейчас ошибки идут в `_error` очередь MassTransit без отдельного сервиса‑обработчика.
+- **Безопасность.** Нет авторизации, HTTPS. Для production — JWT + reverse proxy.
 
 ## Сводка рабочего процесса (комментарии в коде)
 
@@ -178,3 +212,25 @@ Tesseract работает локально, без интернета, бесп
 * **Outbox Publisher** (`BackgroundService`)
   - Периодически сканирует таблицу `outbox` и публикует непроцессированные сообщения в RabbitMQ через MassTransit.
   - После успешной публикации помечает запись как обработанную.
+
+* **Worker Consumer**
+  1. Idempotency check (processed_messages).
+  2. Атомарное взятие задачи (UPDATE WHERE status=uploaded).
+  3. Скачивание PDF из storage.
+  4. Извлечение текста (PdfPig → Tesseract OCR fallback).
+  5. Сохранение результата в БД.
+  6. ACK сообщения.
+  7. При ошибке — ретрай 5s → 30s → 60s → DLQ.
+
+## Итог
+
+| Метрика | Значение |
+|---------|----------|
+| Язык / платформа | C# 12 / .NET 8 |
+| Брокер сообщений | RabbitMQ 4.x через MassTransit |
+| База данных | PostgreSQL 16 + EF Core 8 |
+| OCR (сканы) | Tesseract 5.3 (pdftoppm → PNG → tesseract) |
+| Тесты | 19: 8 unit + 7 unit + 4 integration (Testcontainers) |
+| Мониторинг | Prometheus + Grafana (health checks, метрики) |
+| Демо | `./scripts/demo.sh` — поднять инфраструктуру и проверить |
+| Ссылки | [ROADMAP](docs/ROADMAP.md) · [TASK_COMPLETENESS](docs/TASK_COMPLETENESS.md) · [PRODUCTION_READINESS](docs/PRODUCTION_READINESS.md) · [ADR](docs/adr/ADR001_PDF_Processing_Architecture.md) |
