@@ -96,8 +96,14 @@ for i in $(seq 1 15); do
     sleep 2
 done
 
-# ── Step 2: Start API Gateway ──
-info "Step 2: Starting API Gateway on :5000..."
+# ── Step 2: Kill stale processes ──
+info "Step 2: Cleaning up stale processes..."
+kill $(lsof -ti:5000 2>/dev/null) 2>/dev/null || true
+kill $(lsof -ti:5091 2>/dev/null) 2>/dev/null || true
+sleep 2
+
+# ── Step 3: Start API Gateway ──
+info "Step 3: Starting API Gateway on :5000 (PostgreSQL)..."
 export ASPNETCORE_URLS="http://0.0.0.0:5000"
 export ASPNETCORE_ENVIRONMENT="Development"
 export ConnectionStrings__DefaultConnection="$PG_CONN"
@@ -111,16 +117,22 @@ dotnet run --no-launch-profile > "$LOG_DIR/gateway.log" 2>&1 &
 GATEWAY_PID=$!
 cd "$PROJECT_DIR"
 
-# Wait for gateway to be ready
-for i in $(seq 1 15); do
-    if curl -sf "$API_URL/health/live" >/dev/null 2>&1; then break; fi
+# Wait for gateway to be ready (check logs for PostgreSQL, not in-memory)
+for i in $(seq 1 20); do
+    if curl -sf "$API_URL/health/live" >/dev/null 2>&1; then
+        if grep -q 'in-memory' "$LOG_DIR/gateway.log" 2>/dev/null; then
+            sleep 1
+            continue
+        fi
+        break
+    fi
     sleep 1
 done
 
 if curl -sf "$API_URL/health/live" >/dev/null 2>&1; then
-    pass "Gateway /health/live"
+    pass "Gateway /health/live (PostgreSQL)"
 else
-    fail "Gateway did not start. Check logs: $LOG_DIR/gateway.log"
+    fail "Gateway did not start. Logs: $(tail -10 $LOG_DIR/gateway.log)"
     exit 1
 fi
 
