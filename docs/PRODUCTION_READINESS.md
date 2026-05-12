@@ -1,7 +1,6 @@
 # Production Readiness Assessment
 
 > Оценка готовности текущей системы к эксплуатации в production-среде.
-> Составлена по итогам реализации MVP (май 2026).
 
 ## Что готово для production
 
