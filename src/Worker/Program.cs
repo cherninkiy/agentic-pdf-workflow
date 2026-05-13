@@ -7,6 +7,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Prometheus;
 using Shared.Interfaces;
+using Worker.Agents;
 using Worker.Consumers;
 using Worker.Data;
 using Worker.Services;
@@ -14,13 +15,18 @@ using Worker.Storage;
 
 // ── Worker Host ──
 // Console application running as a generic host with MassTransit consumer.
-// Processes PdfProcessingCommand messages from RabbitMQ:
-//   1. Idempotency check (processed_messages table)
-//   2. Optimistic lock (UPDATE documents SET status='processing' WHERE status='uploaded')
-//   3. Download PDF from storage
-//   4. Extract text via PdfPig (fallback to Tesseract OCR if empty)
-//   5. Save text + mark message processed in one transaction
-//   6. ACK on success, throw on failure → MassTransit retry with delays
+// Uses hybrid architecture:
+//   - MassTransit handles message delivery, retry, DLQ (inter-service boundary)
+//   - MAF DocumentProcessingAgent handles workflow orchestration with checkpoints
+//
+// Processing workflow (inside MAF agent):
+//   1. DownloadDocument  — download PDF from storage
+//   2. ParseDocument     — extract text via PdfPig
+//   3. ExtractText       — OCR fallback via Tesseract
+//   4. SaveResult        — save text to database
+//   5. UpdateStatus      — mark document as completed
+//
+// Each activity saves a checkpoint. If worker crashes, agent resumes from last checkpoint.
 
 var host = Host.CreateDefaultBuilder(args)
     .ConfigureServices((hostContext, services) =>
@@ -50,6 +56,20 @@ var host = Host.CreateDefaultBuilder(args)
 
         // ── Application Services ──
         services.AddScoped<PdfTextExtractor>();
+
+        // ── MAF Agent ──
+        // DocumentProcessingAgent orchestrates the PDF processing workflow
+        // with checkpoint-based durability. Registered as scoped so each
+        // message gets a fresh agent instance with its own state.
+        services.AddScoped<DocumentProcessingAgent>();
+
+        // ── Checkpoint Store ──
+        // PostgreSQL-backed checkpoint storage for durable agent execution.
+        // Enables resume after worker crash — agent continues from last checkpoint.
+        services.AddScoped<ICheckpointStore, PostgreSqlCheckpointStore>();
+
+        // Keep DocumentProcessingService for backward compatibility
+        // (can be removed in future iterations)
         services.AddScoped<DocumentProcessingService>();
 
         // ── MassTransit + RabbitMQ Consumer ──
