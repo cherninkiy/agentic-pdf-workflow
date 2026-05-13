@@ -1,5 +1,7 @@
 # Переход на Microsoft Agent Framework (MAF)
 
+> **Статус: ✅ Завершено** — все 9 этапов выполнены.
+
 ## Цель
 
 Миграция воркера с линейной обработки PDF на **оркестрируемый workflow** с чекпоинтами через Microsoft Agent Framework. Архитектура должна позволять легко добавлять новых агентов (перевод, NER, суммаризация) без изменения ядра.
@@ -105,13 +107,13 @@ var pipeline = agentOrchestrator
 
 ### Этап 1: Миграция на .NET 10 и установка MAF
 
-- [ ] Обновить `Worker.csproj` на `net10.0`
-- [ ] Обновить `ApiGateway.csproj` на `net10.0`
-- [ ] Обновить `Shared.csproj` на `net10.0`
-- [ ] Обновить тестовые проекты на `net10.0`
-- [ ] Установить `Microsoft.Agents.AI` 1.5.0 в Worker
-- [ ] Установить `Microsoft.Agents.AI.Abstractions` в Shared
-- [ ] Проверить что solution собирается
+- [x] Обновить `Worker.csproj` на `net10.0`
+- [x] Обновить `ApiGateway.csproj` на `net10.0`
+- [x] Обновить `Shared.csproj` на `net10.0`
+- [x] Обновить тестовые проекты на `net10.0`
+- [x] Установить `Microsoft.Agents.AI` 1.5.0 в Worker
+- [x] Установить `Microsoft.Agents.AI.Abstractions` в Shared
+- [x] Проверить что solution собирается
 
 **Коммит**: `feat(worker): migrate to .NET 10 and install Microsoft.Agents.AI`
 
@@ -119,12 +121,12 @@ var pipeline = agentOrchestrator
 
 ### Этап 2: Модели данных для чекпоинтов
 
-- [ ] Создать `WorkflowCheckpoint` модель в Shared
-- [ ] Создать `AgentDefinition` модель в Shared
-- [ ] Добавить `DbSet<WorkflowCheckpoint>` в `AppDbContext`
-- [ ] Добавить `DbSet<AgentDefinition>` в `AppDbContext`
-- [ ] Создать SQL миграцию для новых таблиц
-- [ ] Обновить `db/init.sql`
+- [x] Создать `WorkflowCheckpoint` модель в Shared
+- [x] Создать `AgentDefinition` модель в Shared
+- [x] Добавить `DbSet<WorkflowCheckpoint>` в `AppDbContext`
+- [x] Добавить `DbSet<AgentDefinition>` в `AppDbContext`
+- [x] Создать SQL миграцию для новых таблиц
+- [x] Обновить `db/init.sql`
 
 **Коммит**: `feat(shared): add workflow checkpoint and agent definition models`
 
@@ -132,11 +134,11 @@ var pipeline = agentOrchestrator
 
 ### Этап 3: Интерфейсы агентов
 
-- [ ] Создать `IAgent` интерфейс в Shared
-- [ ] Создать `IAgentOrchestrator` интерфейс в Shared
-- [ ] Создать `AgentContext` класс в Shared
-- [ ] Создать `AgentResult` класс в Shared
-- [ ] Создать `ICheckpointStore` интерфейс в Shared
+- [x] Создать `IAgent` интерфейс в Shared
+- [x] Создать `IAgentOrchestrator` интерфейс в Shared
+- [x] Создать `AgentContext` класс в Shared
+- [x] Создать `AgentResult` класс в Shared
+- [x] Создать `ICheckpointStore` интерфейс в Shared
 
 **Коммит**: `feat(shared): define agent abstractions (IAgent, IAgentOrchestrator, AgentContext)`
 
@@ -144,11 +146,11 @@ var pipeline = agentOrchestrator
 
 ### Этап 4: Реализация CheckpointStore (PostgreSQL)
 
-- [ ] Создать `PostgreSqlCheckpointStore` в Worker
-- [ ] Реализовать `SaveCheckpointAsync`
-- [ ] Реализовать `LoadCheckpointAsync`
-- [ ] Реализовать `DeleteCheckpointAsync`
-- [ ] Добавить регистрацию в DI
+- [x] Создать `PostgreSqlCheckpointStore` в Worker
+- [x] Реализовать `SaveCheckpointAsync`
+- [x] Реализовать `LoadCheckpointAsync`
+- [x] Реализовать `DeleteCheckpointAsync`
+- [x] Добавить регистрацию в DI
 
 **Коммит**: `feat(worker): implement PostgreSQL checkpoint store for MAF`
 
@@ -156,14 +158,14 @@ var pipeline = agentOrchestrator
 
 ### Этап 5: Реализация DocumentProcessingAgent
 
-- [ ] Создать класс `DocumentProcessingAgent` в Worker
-- [ ] Реализовать `DownloadDocument` — скачивание из storage
-- [ ] Реализовать `ParseDocument` — PdfPig извлечение
-- [ ] Реализовать `ExtractText` — Tesseract OCR fallback
-- [ ] Реализовать `SaveResult` — сохранение текста
-- [ ] Реализовать `UpdateStatus` — обновление статуса
-- [ ] Каждый шаг должен сохранять чекпоинт
-- [ ] При старте — проверка существующего чекпоинта (resume)
+- [x] Создать класс `DocumentProcessingAgent` в Worker
+- [x] Реализовать `DownloadDocument` — скачивание из storage
+- [x] Реализовать `ParseDocument` — PdfPig извлечение
+- [x] Реализовать `ExtractText` — Tesseract OCR fallback
+- [x] Реализовать `SaveResult` — сохранение текста
+- [x] Реализовать `UpdateStatus` — обновление статуса
+- [x] Каждый шаг должен сохранять чекпоинт
+- [x] При старте — проверка существующего чекпоинта (resume)
 
 **Коммит**: `feat(worker): implement DocumentProcessingAgent with MAF checkpoints`
 
@@ -171,10 +173,10 @@ var pipeline = agentOrchestrator
 
 ### Этап 6: Рефакоринг PdfProcessingConsumer
 
-- [ ] Заменить вызов `DocumentProcessingService` на `DocumentProcessingAgent`
-- [ ] Сохранить MassTransit retry/DLQ как базовую защиту
-- [ ] Добавить логирование прогресса workflow
-- [ ] Обработка ошибок — чекпоинты позволяют resume
+- [x] Заменить вызов `DocumentProcessingService` на `DocumentProcessingAgent`
+- [x] Сохранить MassTransit retry/DLQ как базовую защиту
+- [x] Добавить логирование прогресса workflow
+- [x] Обработка ошибок — чекпоинты позволяют resume
 
 **Коммит**: `feat(worker): refactor consumer to use MAF DocumentProcessingAgent`
 
@@ -182,10 +184,10 @@ var pipeline = agentOrchestrator
 
 ### Этап 7: Обновление Program.cs и DI
 
-- [ ] Зарегистрировать `DocumentProcessingAgent` в DI
-- [ ] Зарегистрировать `PostgreSqlCheckpointStore` в DI
-- [ ] Обновить конфигурацию MAF
-- [ ] Удалить старый `DocumentProcessingService` (или оставить для fallback)
+- [x] Зарегистрировать `DocumentProcessingAgent` в DI
+- [x] Зарегистрировать `PostgreSqlCheckpointStore` в DI
+- [x] Обновить конфигурацию MAF
+- [x] Удалить старый `DocumentProcessingService` (или оставить для fallback)
 
 **Коммит**: `feat(worker): register MAF services in DI container`
 
@@ -193,14 +195,14 @@ var pipeline = agentOrchestrator
 
 ### Этап 8: Тесты
 
-- [ ] Создать `DocumentProcessingAgentTests`
-- [ ] Тест `DownloadDocument` с mock storage
-- [ ] Тест `ParseDocument` с тестовым PDF
-- [ ] Тест `ExtractText` с mock OCR
-- [ ] Тест `SaveResult` с in-memory DB
-- [ ] Тест `UpdateStatus` с проверкой статуса
-- [ ] Тест resume после checkpoint
-- [ ] Обновить существующие тесты при необходимости
+- [x] Создать `DocumentProcessingAgentTests`
+- [x] Тест `DownloadDocument` с mock storage
+- [x] Тест `ParseDocument` с тестовым PDF
+- [x] Тест `ExtractText` с mock OCR
+- [x] Тест `SaveResult` с in-memory DB
+- [x] Тест `UpdateStatus` с проверкой статуса
+- [x] Тест resume после checkpoint
+- [x] Обновить существующие тесты при необходимости
 
 **Коммит**: `test(worker): add DocumentProcessingAgent unit tests with checkpoint scenarios`
 
@@ -208,30 +210,12 @@ var pipeline = agentOrchestrator
 
 ### Этап 9: Документация и отчёт
 
-- [ ] Обновить `README.md` — описать новую архитектуру
-- [ ] Создать `docs/AGENTIC_READINESS.md` — отчёт на русском
-- [ ] Отметить все пункты в этом roadmap как выполненные
-- [ ] Пример создания нового агента (перевод) в документации
+- [x] Обновить `README.md` — описать новую архитектуру
+- [x] Создать `docs/AGENTIC_READINESS.md` — отчёт на русском
+- [x] Отметить все пункты в этом roadmap как выполненные
+- [x] Пример создания нового агента (перевод) в документации
 
 **Коммит**: `docs: add agentic architecture documentation and readiness report`
-
----
-
-## Формат коммитов
-
-Используется формат из `.gitmessage.txt`:
-
-```
-<type>(<scope>): <subject>
-
-<body>
-
-<footer>
-```
-
-- Язык сообщений: **английский**
-- Типы: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
-- Скоупы: `worker`, `shared`, `db`, `docker`, `pipeline`
 
 ## Итого
 
