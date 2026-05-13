@@ -6,6 +6,7 @@ using ApiGateway.Services;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Prometheus;
+using Scalar.AspNetCore;
 
 // ------------------------------------------------------------
 // Program.cs – Application entry point
@@ -87,10 +88,12 @@ if (!string.IsNullOrWhiteSpace(rabbitHost) && !builder.Environment.IsEnvironment
     builder.Services.AddHostedService<OutboxPublisher>();
 }
 
-// ── Controllers + Swagger ──
+// ── Controllers + OpenAPI ──
+// Using Microsoft.AspNetCore.OpenApi (built-in for .NET 10) instead of Swashbuckle.
+// Scalar.AspNetCore provides the API explorer UI at /scalar.
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
@@ -102,11 +105,11 @@ using (var scope = app.Services.CreateScope())
     db.Database.EnsureCreated();
 }
 
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+// ── OpenAPI endpoint + Scalar UI ──
+// /openapi/v1.json — OpenAPI 3.1 specification
+// /scalar — interactive API documentation (modern Swagger UI alternative)
+app.MapOpenApi();
+app.MapScalarApiReference();
 
 // Prometheus metrics — must be before MapControllers to capture request metrics
 app.UseHttpMetrics();
