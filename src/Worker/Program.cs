@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Serilog;
 using Shared.Interfaces;
 using Worker.Agents;
 using Worker.Consumers;
@@ -28,6 +29,9 @@ using Worker.Storage;
 // Each activity saves a checkpoint. If worker crashes, agent resumes from last checkpoint.
 
 var host = Host.CreateDefaultBuilder(args)
+    .UseSerilog((context, loggerConfig) =>
+        loggerConfig.ReadFrom.Configuration(context.Configuration)
+                    .WriteTo.Console(new Serilog.Formatting.Compact.CompactJsonFormatter()))
     .ConfigureServices((hostContext, services) =>
     {
         var configuration = hostContext.Configuration;
@@ -104,11 +108,6 @@ var host = Host.CreateDefaultBuilder(args)
                 });
             });
         });
-    })
-    .ConfigureLogging(logging =>
-    {
-        logging.ClearProviders();
-        logging.AddConsole();
     })
     .Build();
 

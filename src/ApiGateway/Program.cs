@@ -8,6 +8,7 @@ using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Prometheus;
 using Scalar.AspNetCore;
+using Serilog;
 
 // ------------------------------------------------------------
 // Program.cs – Application entry point
@@ -20,6 +21,13 @@ using Scalar.AspNetCore;
 //   5. Ensures the database schema is created on startup.
 // The workflow follows the transactional outbox pattern: uploads are stored in the DB and an outbox row is created; the OutboxPublisher later publishes the message to RabbitMQ.
 var builder = WebApplication.CreateBuilder(args);
+
+// ── Serilog (structured logging) ──
+// Replaces default ILogger with Serilog + CompactJsonFormatter for production-grade
+// structured log output. ReadFrom.Configuration picks up Serilog sections from appsettings.
+builder.Host.UseSerilog((context, loggerConfig) =>
+    loggerConfig.ReadFrom.Configuration(context.Configuration)
+                .WriteTo.Console(new Serilog.Formatting.Compact.CompactJsonFormatter()));
 
         // ── Database (PostgreSQL via EF Core) ──
         // Delegated to AddDatabase() extension method for SRP compliance.
