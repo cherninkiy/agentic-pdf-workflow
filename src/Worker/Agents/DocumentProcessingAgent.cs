@@ -158,6 +158,7 @@ public class DocumentProcessingAgent : IAgent
         ICheckpointStore checkpointStore,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         _logger.LogInformation("Activity: DownloadDocument for {DocumentId}", context.DocumentId);
 
         await using var stream = await _fileStorage.GetAsync(context.FilePath, cancellationToken);
@@ -184,6 +185,7 @@ public class DocumentProcessingAgent : IAgent
         ICheckpointStore checkpointStore,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         _logger.LogInformation("Activity: ParseDocument for {DocumentId}", context.DocumentId);
 
         // PdfTextExtractor handles PdfPig internally
@@ -209,6 +211,7 @@ public class DocumentProcessingAgent : IAgent
         ICheckpointStore checkpointStore,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         _logger.LogInformation("Activity: ExtractText for {DocumentId}", context.DocumentId);
 
         // If ParseDocument already got text, no need for OCR
@@ -232,6 +235,7 @@ public class DocumentProcessingAgent : IAgent
         ICheckpointStore checkpointStore,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         _logger.LogInformation("Activity: SaveResult for {DocumentId}", context.DocumentId);
 
         await _repository.UpdateTextAsync(
@@ -252,6 +256,7 @@ public class DocumentProcessingAgent : IAgent
         ICheckpointStore checkpointStore,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         _logger.LogInformation("Activity: UpdateStatus for {DocumentId}", context.DocumentId);
 
         await _repository.TryUpdateStatusAsync(

@@ -1,5 +1,6 @@
 using MassTransit;
 using Microsoft.Extensions.Logging;
+using Shared.Exceptions;
 using Shared.Interfaces;
 using Shared.Models;
 using Worker.Agents;
@@ -78,7 +79,7 @@ public class PdfProcessingConsumer : IConsumer<PdfProcessingCommand>
             {
                 _logger.LogWarning("Agent workflow failed for document {DocumentId}: {Error}",
                     command.DocumentId, result.ErrorMessage);
-                throw new Exception($"Processing failed for document {command.DocumentId}: {result.ErrorMessage}");
+                throw new DocumentProcessingException(command.DocumentId, result.ErrorMessage!);
             }
 
             // ── Mark message as processed (idempotency) ──
