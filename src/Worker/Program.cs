@@ -5,7 +5,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Prometheus;
 using Shared.Interfaces;
 using Worker.Agents;
 using Worker.Consumers;
@@ -56,6 +55,10 @@ var host = Host.CreateDefaultBuilder(args)
 
         // ── Application Services ──
         services.AddScoped<PdfTextExtractor>();
+
+        // ── Prometheus metrics as a hosted service ──
+        // Wraps MetricServer in IHostedService so it stops gracefully on SIGTERM
+        services.AddHostedService<MetricsHostedService>();
 
         // ── MAF Agent ──
         // DocumentProcessingAgent orchestrates the PDF processing workflow
@@ -108,11 +111,6 @@ var host = Host.CreateDefaultBuilder(args)
         logging.AddConsole();
     })
     .Build();
-
-// ── Prometheus metrics server ──
-// Serves /metrics on a separate port so Prometheus can scrape worker metrics
-using var metricServer = new MetricServer(port: 5091);
-metricServer.Start();
 
 // Auto-create database tables (Dev only)
 using (var scope = host.Services.CreateScope())
