@@ -1,3 +1,4 @@
+using ApiGateway.Authentication;
 using ApiGateway.BackgroundServices;
 using ApiGateway.Data;
 using ApiGateway.Extensions;
@@ -6,12 +7,14 @@ using ApiGateway.Services;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Prometheus;
+using Scalar.AspNetCore;
+using Serilog;
 
 // ------------------------------------------------------------
 // Program.cs – Application entry point
 // ------------------------------------------------------------
 // This file wires up the entire API Gateway workflow:
-//   1. Configures the database (PostgreSQL in production, in‑memory for tests).
+//   1. Configures the database via AddDatabase() extension (PostgreSQL or in-memory).
 //   2. Sets up MassTransit with RabbitMQ (skipped in Development to avoid external deps).
 //   3. Registers application services, including the DocumentService and the OutboxPublisher background service.
 //   4. Adds controllers and Swagger for API documentation.
@@ -19,29 +22,17 @@ using Prometheus;
 // The workflow follows the transactional outbox pattern: uploads are stored in the DB and an outbox row is created; the OutboxPublisher later publishes the message to RabbitMQ.
 var builder = WebApplication.CreateBuilder(args);
 
+// ── Serilog (structured logging) ──
+// Replaces default ILogger with Serilog + CompactJsonFormatter for production-grade
+// structured log output. ReadFrom.Configuration picks up Serilog sections from appsettings.
+builder.Host.UseSerilog((context, loggerConfig) =>
+    loggerConfig.ReadFrom.Configuration(context.Configuration)
+                .WriteTo.Console(new Serilog.Formatting.Compact.CompactJsonFormatter()));
+
         // ── Database (PostgreSQL via EF Core) ──
-        // Use an in‑memory database for Development and Testing environments to avoid external dependencies.
-        // In other environments (e.g., Production) use PostgreSQL when a connection string is provided.
-        // In Testing environment use in-memory database (smoke tests).
-        // Otherwise use PostgreSQL if a connection string is configured,
-        // or fallback to in-memory for Development without external DB.
-        var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-        if (builder.Environment.IsEnvironment("Testing"))
-        {
-            builder.Services.AddDbContext<AppDbContext>(options =>
-                options.UseInMemoryDatabase("TestDb"));
-        }
-        else if (!string.IsNullOrWhiteSpace(connectionString))
-        {
-            builder.Services.AddDbContext<AppDbContext>(options =>
-                options.UseNpgsql(connectionString)
-                       .UseSnakeCaseNamingConvention());
-        }
-        else
-        {
-            builder.Services.AddDbContext<AppDbContext>(options =>
-                options.UseInMemoryDatabase("TestDb"));
-        }
+        // Delegated to AddDatabase() extension method for SRP compliance.
+        // See ServiceCollectionExtensions.AddDatabase() for logic.
+        builder.Services.AddDatabase(builder.Configuration, builder.Environment);
 
 // ── MassTransit + RabbitMQ ──
 // Publishes PdfProcessingCommand messages. The OutboxPublisher
@@ -87,10 +78,21 @@ if (!string.IsNullOrWhiteSpace(rabbitHost) && !builder.Environment.IsEnvironment
     builder.Services.AddHostedService<OutboxPublisher>();
 }
 
-// ── Controllers + Swagger ──
+// ── JWT Authentication ──
+// Delegated to AddGatewayAuthentication() extension method for SRP compliance.
+// See AuthenticationExtensions.AddGatewayAuthentication() for logic.
+// Supports two modes:
+//   - Production: validates against Jwt:Authority (external identity provider)
+//   - Development: self-signed tokens via Jwt:SecretKey + /auth/token endpoint
+// Testing environment skips auth entirely.
+builder.Services.AddGatewayAuthentication(builder.Configuration, builder.Environment);
+
+// ── Controllers + OpenAPI ──
+// Using Microsoft.AspNetCore.OpenApi (built-in for .NET 10) instead of Swashbuckle.
+// Scalar.AspNetCore provides the API explorer UI at /scalar.
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
@@ -102,11 +104,14 @@ using (var scope = app.Services.CreateScope())
     db.Database.EnsureCreated();
 }
 
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+// ── OpenAPI endpoint + Scalar UI ──
+// /openapi/v1.json — OpenAPI 3.1 specification
+// /scalar — interactive API documentation (modern Swagger UI alternative)
+app.MapOpenApi();
+app.MapScalarApiReference();
+
+// JWT Authentication middleware (skipped in Testing)
+app.UseGatewayAuthentication(app.Environment);
 
 // Prometheus metrics — must be before MapControllers to capture request metrics
 app.UseHttpMetrics();
