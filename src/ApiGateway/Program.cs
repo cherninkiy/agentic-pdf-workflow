@@ -12,7 +12,7 @@ using Scalar.AspNetCore;
 // Program.cs – Application entry point
 // ------------------------------------------------------------
 // This file wires up the entire API Gateway workflow:
-//   1. Configures the database (PostgreSQL in production, in‑memory for tests).
+//   1. Configures the database via AddDatabase() extension (PostgreSQL or in-memory).
 //   2. Sets up MassTransit with RabbitMQ (skipped in Development to avoid external deps).
 //   3. Registers application services, including the DocumentService and the OutboxPublisher background service.
 //   4. Adds controllers and Swagger for API documentation.
@@ -21,28 +21,9 @@ using Scalar.AspNetCore;
 var builder = WebApplication.CreateBuilder(args);
 
         // ── Database (PostgreSQL via EF Core) ──
-        // Use an in‑memory database for Development and Testing environments to avoid external dependencies.
-        // In other environments (e.g., Production) use PostgreSQL when a connection string is provided.
-        // In Testing environment use in-memory database (smoke tests).
-        // Otherwise use PostgreSQL if a connection string is configured,
-        // or fallback to in-memory for Development without external DB.
-        var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-        if (builder.Environment.IsEnvironment("Testing"))
-        {
-            builder.Services.AddDbContext<AppDbContext>(options =>
-                options.UseInMemoryDatabase("TestDb"));
-        }
-        else if (!string.IsNullOrWhiteSpace(connectionString))
-        {
-            builder.Services.AddDbContext<AppDbContext>(options =>
-                options.UseNpgsql(connectionString)
-                       .UseSnakeCaseNamingConvention());
-        }
-        else
-        {
-            builder.Services.AddDbContext<AppDbContext>(options =>
-                options.UseInMemoryDatabase("TestDb"));
-        }
+        // Delegated to AddDatabase() extension method for SRP compliance.
+        // See ServiceCollectionExtensions.AddDatabase() for logic.
+        builder.Services.AddDatabase(builder.Configuration, builder.Environment);
 
 // ── MassTransit + RabbitMQ ──
 // Publishes PdfProcessingCommand messages. The OutboxPublisher
