@@ -1,3 +1,4 @@
+using ApiGateway.Authentication;
 using ApiGateway.BackgroundServices;
 using ApiGateway.Data;
 using ApiGateway.Extensions;
@@ -69,6 +70,15 @@ if (!string.IsNullOrWhiteSpace(rabbitHost) && !builder.Environment.IsEnvironment
     builder.Services.AddHostedService<OutboxPublisher>();
 }
 
+// ── JWT Authentication ──
+// Delegated to AddGatewayAuthentication() extension method for SRP compliance.
+// See AuthenticationExtensions.AddGatewayAuthentication() for logic.
+// Supports two modes:
+//   - Production: validates against Jwt:Authority (external identity provider)
+//   - Development: self-signed tokens via Jwt:SecretKey + /auth/token endpoint
+// Testing environment skips auth entirely.
+builder.Services.AddGatewayAuthentication(builder.Configuration, builder.Environment);
+
 // ── Controllers + OpenAPI ──
 // Using Microsoft.AspNetCore.OpenApi (built-in for .NET 10) instead of Swashbuckle.
 // Scalar.AspNetCore provides the API explorer UI at /scalar.
@@ -91,6 +101,9 @@ using (var scope = app.Services.CreateScope())
 // /scalar — interactive API documentation (modern Swagger UI alternative)
 app.MapOpenApi();
 app.MapScalarApiReference();
+
+// JWT Authentication middleware (skipped in Testing)
+app.UseGatewayAuthentication(app.Environment);
 
 // Prometheus metrics — must be before MapControllers to capture request metrics
 app.UseHttpMetrics();
