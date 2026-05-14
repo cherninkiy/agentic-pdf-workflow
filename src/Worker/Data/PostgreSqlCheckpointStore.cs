@@ -40,13 +40,17 @@ public class PostgreSqlCheckpointStore : ICheckpointStore
                                       && c.CurrentActivity == activityName,
                 cancellationToken);
 
+        var errorMessage = result.ErrorMessage?.Length > 4096
+            ? result.ErrorMessage[..4096]
+            : result.ErrorMessage;
+
         if (existing != null)
         {
             // Update existing checkpoint
             existing.StateData = result.OutputData;
             existing.IsCompleted = result.IsSuccess;
             existing.IsFailed = !result.IsSuccess;
-            existing.ErrorMessage = result.ErrorMessage;
+            existing.ErrorMessage = errorMessage;
             existing.UpdatedAt = DateTime.UtcNow;
         }
         else
@@ -61,7 +65,7 @@ public class PostgreSqlCheckpointStore : ICheckpointStore
                 StateData = result.OutputData,
                 IsCompleted = result.IsSuccess,
                 IsFailed = !result.IsSuccess,
-                ErrorMessage = result.ErrorMessage,
+                ErrorMessage = errorMessage,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             });

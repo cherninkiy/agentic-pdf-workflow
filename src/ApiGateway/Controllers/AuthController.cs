@@ -24,11 +24,16 @@ namespace ApiGateway.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly IConfiguration _configuration;
+    private readonly IHostEnvironment _environment;
     private readonly ILogger<AuthController> _logger;
 
-    public AuthController(IConfiguration configuration, ILogger<AuthController> logger)
+    public AuthController(
+        IConfiguration configuration,
+        IHostEnvironment environment,
+        ILogger<AuthController> logger)
     {
         _configuration = configuration;
+        _environment = environment;
         _logger = logger;
     }
 
@@ -36,10 +41,14 @@ public class AuthController : ControllerBase
     /// POST /auth/token
     /// Issues a JWT token for development testing.
     /// Accepts any non-empty username; returns a token valid for 1 hour.
+    /// Only available in the Development environment.
     /// </summary>
     [HttpPost("token")]
     public IActionResult GetToken([FromBody] TokenRequest request)
     {
+        if (!_environment.IsDevelopment())
+            return NotFound();
+
         var secretKey = _configuration.GetValue<string>("Jwt:SecretKey");
         if (string.IsNullOrWhiteSpace(secretKey))
             return Unauthorized(new { error = "Jwt:SecretKey is not configured" });

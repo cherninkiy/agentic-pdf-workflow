@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Prometheus;
@@ -16,17 +17,18 @@ public class MetricsHostedService : IHostedService
 {
     private readonly MetricServer _metricServer;
     private readonly ILogger<MetricsHostedService> _logger;
+    private readonly int _port;
 
-    public MetricsHostedService(ILogger<MetricsHostedService> logger)
+    public MetricsHostedService(IConfiguration configuration, ILogger<MetricsHostedService> logger)
     {
         _logger = logger;
-        // Prometheus metrics endpoint — separate port for worker metrics
-        _metricServer = new MetricServer(port: 5091);
+        _port = configuration.GetValue<int>("Metrics:Port", 5091);
+        _metricServer = new MetricServer(port: _port);
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Starting Prometheus metric server on port 5091");
+        _logger.LogInformation("Starting Prometheus metric server on port {Port}", _port);
         _metricServer.Start();
         return Task.CompletedTask;
     }

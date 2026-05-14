@@ -45,14 +45,21 @@ public static class AuthenticationExtensions
                 // Otherwise use symmetric key validation (development mode)
                 else if (!string.IsNullOrWhiteSpace(jwtSecret))
                 {
+                    var secretBytes = System.Text.Encoding.UTF8.GetBytes(jwtSecret);
+                    if (secretBytes.Length < 32)
+                    {
+                        throw new InvalidOperationException(
+                            "Jwt:SecretKey must be at least 256 bits (32 bytes) for HMAC SHA256. " +
+                            $"Current length: {secretBytes.Length} bytes.");
+                    }
+
                     options.TokenValidationParameters = new TokenValidationParameters
                     {
                         ValidateIssuer = false,
                         ValidateAudience = false,
                         ValidateLifetime = true,
                         ValidateIssuerSigningKey = true,
-                        IssuerSigningKey = new SymmetricSecurityKey(
-                            System.Text.Encoding.UTF8.GetBytes(jwtSecret)),
+                        IssuerSigningKey = new SymmetricSecurityKey(secretBytes),
                         ClockSkew = TimeSpan.Zero
                     };
                 }
