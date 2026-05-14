@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS workflow_checkpoints (
     agent_name VARCHAR(128) NOT NULL,
     document_id UUID NOT NULL,
     current_activity VARCHAR(128) NOT NULL,
-    state_data JSONB,
+    state_data TEXT,
     is_completed BOOLEAN NOT NULL DEFAULT FALSE,
     is_failed BOOLEAN NOT NULL DEFAULT FALSE,
     error_message TEXT,
