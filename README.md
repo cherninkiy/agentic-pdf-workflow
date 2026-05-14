@@ -1,3 +1,7 @@
+[![CI](https://github.com/cherninkiy/agentic-pdf-workflow/actions/workflows/ci.yml/badge.svg)](https://github.com/cherninkiy/agentic-pdf-workflow/actions/workflows/ci.yml)
+[![.NET](https://img.shields.io/badge/.NET-10.0-blue)](https://dotnet.microsoft.com/)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 # Система обработки PDF (Agentic)
 
 ## Обзор
@@ -65,8 +69,8 @@
   /Worker              – .NET Worker (MassTransit + MAF Agent)
   /Shared              – Контракты, модели и интерфейсы
 /tests
-  /ApiGateway.UnitTests – Юнит- и smoke-тесты API (8 тестов)
-  /Worker.UnitTests     – Юнит-тесты воркера (16 тестов, включая MAF)
+  /ApiGateway.UnitTests – Юнит- и smoke-тесты API (12 тестов: service, outbox, smoke)
+  /Worker.UnitTests     – Юнит-тесты воркера (21 тест: MAF agent, checkpoints, OCR, retry, concurrency)
   /IntegrationTests     – Интеграционные тесты через Testcontainers (4 теста)
 /samples                – Примеры PDF для тестирования (текстовый, скан, инвойс)
 /scripts                – Вспомогательные скрипты (demo.sh)
@@ -152,7 +156,7 @@ db/init.sql             – Инициализационный скрипт БД
 dotnet test
 ```
 
-Результат: **28 тестов** (8 ApiGateway + 16 Worker + 4 Integration) — все проходят.
+Результат: **37 тестов** (12 ApiGateway + 21 Worker + 4 Integration) — все проходят.
 
 ## CI‑pipeline
 
@@ -160,12 +164,32 @@ GitHub Actions (`.github/workflows/ci.yml`) выполняет:
 
 1. Установку системных зависимостей (Tesseract OCR + poppler-utils).
 2. Восстановление и сборку всех проектов.
-3. Запуск юнит‑тестов ApiGateway (8 тестов).
-4. Запуск юнит‑тестов Worker (16 тестов: MAF agent, checkpoints, OCR, cancellation).
+3. Запуск юнит‑тестов ApiGateway (12 тестов: сервис, outbox publisher).
+4. Запуск юнит‑тестов Worker (21 тест: MAF agent, checkpoints, OCR, cancellation, retry→DLQ, concurrency).
 5. Запуск интеграционных тестов через Testcontainers (4 теста: PostgreSQL + RabbitMQ).
 6. Сборку Docker‑образов `pdf-api-gateway` и `pdf-worker`.
 
 ## Гибридная архитектура: MAF + MassTransit
+
+### 🌿 **SOTA-решение** — ветка [`sota-solution`](https://github.com/cherninkiy/agentic-pdf-workflow/tree/sota-solution)
+
+**SOTA-решение** — это **MassTransit-only** подход: вся оркестрация обработки PDF выполняется внутри MassTransit consumer без MAF-агента, ретраи и DLQ обеспечиваются встроенными механизмами MassTransit.
+
+Ключевые особенности SOTA-решения:
+- Матрица сравнения **MAF vs MassTransit** с анализом 6 критериев
+- Детальное обоснование выбора MassTransit для MVP (прагматичный подход)
+- Демо-скрипт и изолированные тесты
+
+### Agentic Worflow (Microsoft Agent Framework)
+
+Текущая ветка (`main`) развивает это решение, добавляя:
+- **MAF-агент** (`DocumentProcessingAgent`) с чекпоинтами для durable workflow,
+- **JWT аутентификацию** с dev-эндпоинтом `/auth/token`,
+- **Serilog** structured logging с CompactJsonFormatter,
+- **MetricsHostedService** для graceful shutdown Prometheus metric server,
+- **Кастомные исключения** (`DocumentProcessingException`) для clarity в DLQ,
+- **Расширенное тестовое покрытие** (OutboxPublisher, retry→DLQ, idempotency, concurrency).
+
 
 Система использует оба фреймворка на разных уровнях:
 
@@ -259,7 +283,7 @@ Tesseract работает локально, без интернета, бесп
 ## Известные ограничения и отложенные улучшения
 
 - **Отдельный обработчик DLQ.** Сейчас ошибки идут в `_error` очередь MassTransit без отдельного сервиса‑обработчика.
-- **Безопасность.** Нет авторизации, HTTPS. Для production — JWT + reverse proxy.
+- **HTTPS.** Все эндпоинты работают по HTTP. Для production — reverse proxy (nginx/traefik) с TLS.
 - **AI-агенты.** Перевод, суммаризация, NER — запланированы как следующие агенты.
 
 ## Сводка рабочего процесса
@@ -293,7 +317,9 @@ Tesseract работает локально, без интернета, бесп
 | База данных | PostgreSQL 16 + EF Core 10 |
 | Agent Framework | Microsoft Agent Framework (MAF) |
 | OCR (сканы) | Tesseract 5.3 (pdftoppm → PNG → tesseract) |
-| Тесты | 28: 8 unit + 16 unit + 4 integration (Testcontainers) |
-| Мониторинг | Prometheus + Grafana (health checks, метрики) |
+| Тесты | 37: 12 ApiGateway unit + 21 Worker unit + 4 integration (Testcontainers) |
+| Мониторинг | Prometheus + Grafana (health checks, метрики, structured logging через Serilog) |
+| Аутентификация | JWT (dev-эндпоинт /auth/token, production через внешний IDP) |
+| Логирование | Serilog + CompactJsonFormatter (structured logging) |
 | Демо | `./scripts/demo.sh` |
 | Ссылки | [AGENTIC_ROADMAP](docs/AGENTIC_ROADMAP.md) · [AGENTIC_READINESS](docs/AGENTIC_READINESS.md) · [ADR](docs/adr/ADR001_PDF_Processing_Architecture.md) |
