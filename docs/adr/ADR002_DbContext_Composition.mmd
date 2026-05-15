@@ -1,0 +1,30 @@
+flowchart  LR
+    subgraph Shared
+        C1["DocumentConfiguration"]
+        C2["ProcessedMessageConfiguration"]
+        C3["OutboxConfiguration"]
+        C4["WorkflowCheckpointConfiguration"]
+        C5["AgentDefinitionConfiguration"]
+    end
+
+    subgraph ApiGateway
+        A["GatewayDbContext"]
+        A1["DbSet<Document>"]
+        A2["DbSet<ProcessedMessage>"]
+        A3["DbSet<Outbox>"]
+        A --> C1
+        A --> C2
+        A --> C3
+    end
+
+    subgraph Worker
+        B["WorkerDbContext"]
+        B1["DbSet<Document>"]
+        B2["DbSet<ProcessedMessage>"]
+        B4["DbSet<WorkflowCheckpoint>"]
+        B5["DbSet<AgentDefinition>"]
+        B --> C1
+        B --> C2
+        B --> C4
+        B --> C5
+    end
