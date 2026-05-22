@@ -37,12 +37,12 @@ var host = Host.CreateDefaultBuilder(args)
         var configuration = hostContext.Configuration;
 
         // ── Database (PostgreSQL via EF Core) ──
-        services.AddDbContext<AppDbContext>(options =>
+        services.AddDbContext<WorkerDbContext>(options =>
             options.UseNpgsql(configuration.GetConnectionString("DefaultConnection"))
                    .UseSnakeCaseNamingConvention());
 
         // ── Repository ──
-        services.AddScoped<IDocumentRepository, DocumentRepository>();
+        services.AddScoped<IDocumentRepository, Worker.Repositories.DocumentRepository>();
 
         // ── File Storage ──
         // Uses local Docker volume shared with ApiGateway for MVP.
@@ -114,7 +114,7 @@ var host = Host.CreateDefaultBuilder(args)
 // Auto-create database tables (Dev only)
 using (var scope = host.Services.CreateScope())
 {
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var db = scope.ServiceProvider.GetRequiredService<WorkerDbContext>();
     db.Database.EnsureCreated();
 }
 
