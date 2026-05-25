@@ -19,10 +19,9 @@ public class DocumentProcessingServiceTests
         _fileStorageMock = new Mock<IFileStorage>();
         var loggerMock = new Mock<ILogger<DocumentProcessingService>>();
 
-        // Create PdfTextExtractor without OCR service (PdfPig only mode)
-        // IOCRService parameter is optional — passing null disables OCR fallback
+        // Create PdfTextExtractor with null OCR (PdfPig only mode)
         var extractorLoggerMock = new Mock<ILogger<PdfTextExtractor>>();
-        _textExtractorMock = new Mock<PdfTextExtractor>(extractorLoggerMock.Object, Mock.Of<IOCRService>())
+        _textExtractorMock = new Mock<PdfTextExtractor>(extractorLoggerMock.Object, (IOCRService?)null)
         {
             CallBase = true
         };

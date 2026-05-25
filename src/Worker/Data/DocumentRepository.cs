@@ -31,31 +31,41 @@ public class DocumentRepository : IDocumentRepository
 
     public async Task<bool> TryUpdateStatusAsync(Guid id, DocumentStatus fromStatus, DocumentStatus toStatus, string? errorMessage = null, CancellationToken cancellationToken = default)
     {
-        var document = await _context.Documents.FirstOrDefaultAsync(d => d.Id == id && d.Status == fromStatus, cancellationToken);
-        if (document == null) return false;
+        // Atomic optimistic lock using raw SQL to avoid race conditions.
+        // Uses int status values (matching DocumentStatus enum) — no JOIN needed.
+        var fromStatusInt = (int)fromStatus;
+        var toStatusInt = (int)toStatus;
 
-        document.Status = toStatus;
+        int rows;
         if (toStatus == DocumentStatus.Processing)
-            document.StartedAt = DateTime.UtcNow;
-        else if (toStatus is DocumentStatus.Completed or DocumentStatus.Failed)
-            document.CompletedAt = DateTime.UtcNow;
+        {
+            rows = await _context.Database.ExecuteSqlRawAsync(
+                "UPDATE documents SET status = {0}, started_at = {1} WHERE id = {2} AND status = {3}",
+                toStatusInt, DateTime.UtcNow, id, fromStatusInt,
+                cancellationToken);
+        }
+        else
+        {
+            rows = await _context.Database.ExecuteSqlRawAsync(
+                "UPDATE documents SET status = {0}, completed_at = {1}, error_message = {2} WHERE id = {3} AND status = {4}",
+                toStatusInt, DateTime.UtcNow,
+                errorMessage ?? (object)DBNull.Value,
+                id, fromStatusInt,
+                cancellationToken);
+        }
 
-        if (errorMessage != null)
-            document.ErrorMessage = errorMessage;
-
-        await _context.SaveChangesAsync(cancellationToken);
-        return true;
+        return rows > 0;
     }
 
     public async Task UpdateTextAsync(Guid id, string? extractedText, DocumentStatus status, CancellationToken cancellationToken = default)
     {
-        var document = await _context.Documents.FirstOrDefaultAsync(d => d.Id == id, cancellationToken);
-        if (document == null) return;
-
-        document.ExtractedText = extractedText;
-        document.Status = status;
-        document.CompletedAt = DateTime.UtcNow;
-        await _context.SaveChangesAsync(cancellationToken);
+        await _context.Database.ExecuteSqlRawAsync(
+            "UPDATE documents SET extracted_text = {0}, status = {1}, completed_at = {2} WHERE id = {3}",
+            extractedText ?? (object)DBNull.Value,
+            (int)status,
+            DateTime.UtcNow,
+            id,
+            cancellationToken);
     }
 
     public async Task<List<OutboxMessage>> GetOutboxPendingAsync(CancellationToken cancellationToken = default)

@@ -65,44 +65,30 @@ public class TesseractOcrService : IOCRService
 
             _logger.LogInformation("Processing {PageCount} pages with Tesseract", pageFiles.Count);
 
-            // 2. Run Tesseract on each page in parallel
-            // Uses SemaphoreSlim to cap concurrency at Environment.ProcessorCount / 2
-            // to avoid saturating CPU on large multi-page documents.
-            var semaphore = new SemaphoreSlim(Math.Max(1, Environment.ProcessorCount / 2));
+            // 2. Run Tesseract on each page
             var pageTexts = new List<string>();
-            var lockObj = new object();
-
-            await Parallel.ForEachAsync(pageFiles, cancellationToken, async (pageFile, ct) =>
+            foreach (var pageFile in pageFiles)
             {
-                await semaphore.WaitAsync(ct);
-                try
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var outputBase = Path.Combine(tempDir, $"out_{Path.GetFileNameWithoutExtension(pageFile)}");
+                var args = $"\"{pageFile}\" \"{outputBase}\" -l eng+rus --psm 3";
+
+                var envVars = new Dictionary<string, string>
                 {
-                    var outputBase = Path.Combine(tempDir, $"out_{Path.GetFileNameWithoutExtension(pageFile)}");
-                    var args = $"\"{pageFile}\" \"{outputBase}\" -l eng+rus --psm 3";
+                    ["TESSDATA_PREFIX"] = _tessDataPath
+                };
 
-                    var envVars = new Dictionary<string, string>
-                    {
-                        ["TESSDATA_PREFIX"] = _tessDataPath
-                    };
+                await RunProcessAsync("tesseract", args, cancellationToken, envVars);
 
-                    await RunProcessAsync("tesseract", args, ct, envVars);
-
-                    var textFile = $"{outputBase}.txt";
-                    if (File.Exists(textFile))
-                    {
-                        var text = await File.ReadAllTextAsync(textFile, ct);
-                        if (!string.IsNullOrWhiteSpace(text))
-                        {
-                            lock (lockObj)
-                                pageTexts.Add(text.Trim());
-                        }
-                    }
-                }
-                finally
+                var textFile = $"{outputBase}.txt";
+                if (File.Exists(textFile))
                 {
-                    semaphore.Release();
+                    var text = await File.ReadAllTextAsync(textFile, cancellationToken);
+                    if (!string.IsNullOrWhiteSpace(text))
+                        pageTexts.Add(text.Trim());
                 }
-            });
+            }
 
             var result = pageTexts.Count > 0 ? string.Join("\n\n", pageTexts) : null;
             _logger.LogInformation("Tesseract extracted {Length} chars from {Pages} pages",

@@ -4,6 +4,15 @@ using ApiGateway.Services;
 
 namespace ApiGateway.Controllers;
 
+/// <summary>
+/// REST API for PDF document management.
+/// Implements the document status lifecycle: uploaded → processing → completed | failed.
+///
+/// Endpoints:
+///   POST /upload — Upload a PDF file (max 4 MB). Returns 202 Accepted with DocumentId.
+///   GET  /list   — List all documents with metadata (id, filename, status, created_at).
+///   GET  /text/{id} — Get extracted text. Returns 200 (ready), 202 (processing), 409 (failed).
+/// </summary>
 [ApiController]
 [Route("")]
 public class DocumentsController : ControllerBase
@@ -18,7 +27,7 @@ public class DocumentsController : ControllerBase
     }
 
     [HttpPost("upload")]
-    [RequestSizeLimit(4 * 1024 * 1024)] // 4 MB limit
+    [RequestSizeLimit(4 * 1024 * 1024)] // 4 MB limit (MVP stage)
     public async Task<IActionResult> Upload(IFormFile file, CancellationToken cancellationToken)
     {
         if (file == null || file.Length == 0)
