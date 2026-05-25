@@ -46,11 +46,11 @@ public class FullWorkflowTests : IAsyncLifetime
         _factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
-                builder.UseSetting("ConnectionStrings__DefaultConnection", _postgres.GetConnectionString());
-                builder.UseSetting("RabbitMq__Host", _rabbitMq.Hostname);
-                builder.UseSetting("RabbitMq__Username", "guest");
-                builder.UseSetting("RabbitMq__Password", "guest");
-                builder.UseSetting("Storage__LocalPath", Path.GetTempPath());
+                builder.UseSetting("ConnectionStrings:DefaultConnection", _postgres.GetConnectionString());
+                builder.UseSetting("RabbitMq:Host", _rabbitMq.Hostname);
+                builder.UseSetting("RabbitMq:Username", "guest");
+                builder.UseSetting("RabbitMq:Password", "guest");
+                builder.UseSetting("Storage:LocalPath", Path.GetTempPath());
             });
 
         _client = _factory.CreateClient();
