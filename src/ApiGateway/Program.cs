@@ -64,7 +64,22 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
-    db.Database.EnsureCreated();
+    if (db.Database.IsRelational())
+    {
+        var pendingMigrations = db.Database.GetPendingMigrations();
+        if (pendingMigrations.Any())
+        {
+            db.Database.Migrate();
+        }
+        else
+        {
+            db.Database.EnsureCreated();
+        }
+    }
+    else
+    {
+        db.Database.EnsureCreated();
+    }
 }
 
 app.MapOpenApi();
