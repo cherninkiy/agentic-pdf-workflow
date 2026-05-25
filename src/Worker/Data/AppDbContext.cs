@@ -43,7 +43,7 @@ public class AppDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.AgentName).HasMaxLength(128).IsRequired();
             entity.Property(e => e.CurrentActivity).HasMaxLength(128).IsRequired();
-            entity.Property(e => e.StateData).HasColumnType("jsonb");
+            entity.Property(e => e.StateData).HasColumnType("text");
             entity.Property(e => e.ErrorMessage).HasMaxLength(4096);
             entity.HasIndex(e => new { e.AgentName, e.DocumentId });
             entity.HasIndex(e => e.IsCompleted);
