@@ -1,36 +1,88 @@
-# Система обработки PDF (MVP)
+[![CI](https://github.com/cherninkiy/agentic-pdf-workflow/actions/workflows/ci.yml/badge.svg)](https://github.com/cherninkiy/agentic-pdf-workflow/actions/workflows/ci.yml)
+[![.NET](https://img.shields.io/badge/.NET-10.0-blue)](https://dotnet.microsoft.com/)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
+# Система обработки PDF (Agentic)
 
 ## Обзор
 
-Этот репозиторий реализует систему обработки PDF‑документов в соответствии с архитектурным решением [ADR001](docs/adr/ADR001_PDF_Processing_Architecture.md) и планом реализации [ROADMAP](docs/ROADMAP.md). Система состоит из двух сервисов:
+Этот репозиторий реализует систему обработки PDF‑документов в соответствии с архитектурным решением [ADR001](docs/adr/ADR001_PDF_Processing_Architecture.md) и планом реализации [AGENTIC_ROADMAP](docs/AGENTIC_ROADMAP.md). Система состоит из двух сервисов:
 
 | Сервис | Ответственность |
 |--------|-----------------|
 | **ApiGateway** | HTTP‑API для загрузки PDF, получения списка документов и извлечённого текста. Реализует паттерн транзакционного outbox для надёжной доставки сообщений. |
-| **Worker** | Потребитель сообщений `PdfProcessingCommand`, извлекает текст из PDF (PdfPig + Tesseract OCR fallback), сохраняет результат и обновляет статус документа. |
+| **Worker** | MAF‑оркестрируемый workflow с чекпоинтами. Извлекает текст из PDF (PdfPig + Tesseract OCR fallback), сохраняет результат и обновляет статус документа. При падении воркера — resume с последнего чекпоинта. |
 
 Оба сервиса используют общую библиотеку **Shared**, содержащую контракты, DTO, перечисления и интерфейсы.
+
+## Архитектура (Agentic)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    MassTransit Consumer                     │
+│  (приём сообщений из RabbitMQ, retry/DLQ — без изменений)   │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│              DocumentProcessingAgent (MAF)                  │
+│                                                             │
+│  ┌──────────────┐   ┌──────────────┐   ┌──────────────┐     │
+│  │ Download     │──▶│ Parse        │──▶│ Extract      │     │
+│  │ Document     │   │ Document     │   │ Text         │     │
+│  └──────────────┘   └──────────────┘   └──────────────┘     │
+│        │ checkpoint      │ checkpoint      │ checkpoint     │
+│        ▼                 ▼                 ▼                │
+│  ┌──────────────┐   ┌──────────────┐                        │
+│  │ Save         │──▶│ Update       │                        │
+│  │ Result       │   │ Status       │                        │
+│  └──────────────┘   └──────────────┘                        │
+│        │ checkpoint      │ checkpoint                       │
+└─────────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+               ┌────────────────────────┐
+               │  CheckpointStore       │
+               │  (PostgreSQL + EF Core)│
+               └────────────────────────┘
+```
+
+### Принцип работы чекпоинтов
+
+Каждый шаг MAF-агента сохраняет своё состояние в таблицу `workflow_checkpoints` PostgreSQL. Если воркер упадёт после `ParseDocument`, при рестарте агент продолжит с `ExtractText`, а не сначала.
+
+### Workflow шагов
+
+| # | Шаг | Описание | Чекпоинт |
+|---|-----|----------|----------|
+| 1 | `DownloadDocument` | Скачивание PDF из файлового хранилища | PDF bytes (Base64) |
+| 2 | `ParseDocument` | Извлечение текста через PdfPig | Извлечённый текст |
+| 3 | `ExtractText` | OCR fallback через Tesseract если PdfPig вернул пустой текст | Финальный текст |
+| 4 | `SaveResult` | Сохранение текста в БД | — |
+| 5 | `UpdateStatus` | Обновление статуса документа на `completed` | — |
 
 ## Структура проекта
 
 ```
 /src
   /ApiGateway          – ASP.NET Core Web API
-  /Worker              – .NET Worker (MassTransit consumer)
+  /Worker              – .NET Worker (MassTransit + MAF Agent)
   /Shared              – Контракты, модели и интерфейсы
 /tests
-  /ApiGateway.UnitTests – Юнит‑ и smoke‑тесты API (8 тестов)
-  /Worker.UnitTests     – Юнит‑тесты воркера (7 тестов, включая Tesseract OCR)
+  /ApiGateway.UnitTests – Юнит- и smoke-тесты API (12 тестов: service, outbox, smoke)
+  /Worker.UnitTests     – Юнит-тесты воркера (21 тест: MAF agent, checkpoints, OCR, retry, concurrency)
   /IntegrationTests     – Интеграционные тесты через Testcontainers (4 теста)
 /samples                – Примеры PDF для тестирования (текстовый, скан, инвойс)
 /scripts                – Вспомогательные скрипты (demo.sh)
 /.github
-  /workflows/ci.yml     – CI‑pipeline (build, test x3, Docker образы)
+  /workflows/ci.yml     – CI-pipeline (build, test x3, Docker образы)
 docs/
   /adr/                 – Архитектурные решения (ADR-001)
-  /ROADMAP.md           – План реализации
-  /TASK_COMPLETENESS.md – Отчёт о полноте реализации
+  /AGENTIC_ROADMAP.md   – План миграции на MAF
+  /AGENTIC_READINESS.md – Отчёт о готовности agentic-архитектуры
   /PRODUCTION_READINESS.md – Оценка production-готовности
+  /TASK_COMPLETENESS.md – Отчёт о полноте реализации
+  /ROADMAP.md           – План реализации MVP
 /grafana
   /dashboards/          – Преднастроенный дашборд Grafana
 /prometheus
@@ -43,16 +95,18 @@ db/init.sql             – Инициализационный скрипт БД
 
 | Документ | Описание |
 |----------|----------|
-| [ROADMAP.md](docs/ROADMAP.md) | План реализации по дням (1–7), статус выполнения |
+| [AGENTIC_ROADMAP.md](docs/AGENTIC_ROADMAP.md) | План миграции на MAF по этапам (1–9), статус выполнения |
+| [AGENTIC_READINESS.md](docs/AGENTIC_READINESS.md) | Отчёт о готовности agentic-архитектуры |
+| [ROADMAP.md](docs/ROADMAP.md) | План реализации MVP по дням (1–7) |
 | [TASK_COMPLETENESS.md](docs/TASK_COMPLETENESS.md) | Сопоставление требований ТЗ с реализованным функционалом |
-| [PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md) | Оценка готовности к production: что сделано, что доделать |
-| [ADR001](docs/adr/ADR001_PDF_Processing_Architecture.md) | Архитектурное решение: выбор MAF → MassTransit, статусная модель, outbox |
+| [PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md) | Оценка готовности к production |
+| [ADR001](docs/adr/ADR001_PDF_Processing_Architecture.md) | Архитектурное решение: выбор MAF + MassTransit |
 
 ## Начало работы
 
 ### Предварительные требования
 
-- **.NET 8 SDK** (`dotnet --version` → `8.0.x`)
+- **.NET 10 SDK** (`dotnet --version` → `10.0.x`)
 - **Docker** (для запуска полной инфраструктуры)
 - **PostgreSQL** и **RabbitMQ** (поднимаются через Docker Compose)
 
@@ -96,23 +150,13 @@ db/init.sql             – Инициализационный скрипт БД
 ./scripts/demo.sh
 ```
 
-Скрипт последовательно:
-1. Запускает PostgreSQL + RabbitMQ через Docker Compose
-2. Стартует Gateway и Worker в development-режиме
-3. Проверяет `/health/live` и Swagger UI
-4. Загружает все `.pdf` из `samples/`
-5. Поллит `/text/{id}` до завершения обработки
-6. Сохраняет извлечённый текст и выводит сводку
-
 ### Запуск тестов
-
-Все юнит‑ и smoke‑тесты работают с in‑memory базой и не требуют внешних сервисов.
 
 ```bash
 dotnet test
 ```
 
-Результат: **19 тестов** (8 ApiGateway + 7 Worker + 4 Integration) — все проходят.
+Результат: **37 тестов** (12 ApiGateway + 21 Worker + 4 Integration) — все проходят.
 
 ## CI‑pipeline
 
@@ -120,72 +164,109 @@ GitHub Actions (`.github/workflows/ci.yml`) выполняет:
 
 1. Установку системных зависимостей (Tesseract OCR + poppler-utils).
 2. Восстановление и сборку всех проектов.
-3. Запуск юнит‑тестов ApiGateway (8 тестов).
-4. Запуск юнит‑тестов Worker (7 тестов: обработка, OCR, отмена).
+3. Запуск юнит‑тестов ApiGateway (12 тестов: сервис, outbox publisher).
+4. Запуск юнит‑тестов Worker (21 тест: MAF agent, checkpoints, OCR, cancellation, retry→DLQ, concurrency).
 5. Запуск интеграционных тестов через Testcontainers (4 теста: PostgreSQL + RabbitMQ).
 6. Сборку Docker‑образов `pdf-api-gateway` и `pdf-worker`.
 
-Пайплайн запускается при каждом push/PR в ветку `main` и в feature‑ветки.
+## Гибридная архитектура: MAF + MassTransit
 
-## MAF vs MassTransit: выбор технологий
+### 🌿 **SOTA-решение** — ветка [`sota-solution`](https://github.com/cherninkiy/agentic-pdf-workflow/tree/sota-solution)
 
-В [ADR001](docs/adr/ADR001_PDF_Processing_Architecture.md) изначально планировалось использовать **Microsoft Agent Framework (MAF)** для оркестрации шагов обработки документа (`DownloadDocument → UpdateStatusProcessing → ExtractTextStep → SaveTextAndComplete`) с встроенными чекпоинтами и декларативными ретраями. Однако в ходе реализации MVP был выбран **MassTransit** – зрелый фреймворк для обмена сообщениями.
+**SOTA-решение** — это **MassTransit-only** подход: вся оркестрация обработки PDF выполняется внутри MassTransit consumer без MAF-агента, ретраи и DLQ обеспечиваются встроенными механизмами MassTransit.
 
-На практике `MassTransit` взял на себя бóльшую часть того, что должен был дать MAF:
+Ключевые особенности SOTA-решения:
+- Матрица сравнения **MAF vs MassTransit** с анализом 6 критериев
+- Детальное обоснование выбора MassTransit для MVP (прагматичный подход)
+- Демо-скрипт и изолированные тесты
 
-| Задача | MassTransit | MAF |
-|--------|-------------|---------------------|
-| Надёжная доставка сообщений через RabbitMQ | ✅ First‑class поддержка, конфигурация в несколько строк | ❌ Требует ручной настройки поверх Raw RabbitMQ |
-| Retry‑механизм (5s → 30s → 60s) | ✅ `.UseMessageRetry()` с экспоненциальной задержкой | ❌ Нужно писать кастомный ретрай посредник |
-| Dead Letter Queue | ✅ Встроенная `_error` очередь | ❌ Отсутствует, требуется самостоятельная реализация |
-| Graceful Shutdown | ✅ Автоматически обрабатывает SIGTERM | ❌ Не документирован |
-| Ограничение параллелизма (prefetch=1) | ✅ `e.PrefetchCount` | ❌ Нет поддержки |
-| Idempotency Consumer | ✅ Легко реализуется через фильтры | ❌ Нет встроенных механизмов |
+### Agentic Worflow (Microsoft Agent Framework)
 
-**Вывод для MVP:** MassTransit позволяет быстро получить надёжную систему обмена сообщениями без написания низкоуровневого кода. Это прагматичный выбор, который гарантирует стабильность на старте.
+Текущая ветка (`main`) развивает это решение, добавляя:
+- **MAF-агент** (`DocumentProcessingAgent`) с чекпоинтами для durable workflow,
+- **JWT аутентификацию** с dev-эндпоинтом `/auth/token`,
+- **Serilog** structured logging с CompactJsonFormatter,
+- **MetricsHostedService** для graceful shutdown Prometheus metric server,
+- **Кастомные исключения** (`DocumentProcessingException`) для clarity в DLQ,
+- **Расширенное тестовое покрытие** (OutboxPublisher, retry→DLQ, idempotency, concurrency).
 
-### MAF сегодня (на момент MVP)
 
-С апреля 2026 **Microsoft Agent Framework стал production‑ready** и официально рекомендован для **координации AI‑агентов** (перевод, суммаризация, классификация, маршрутизация). MAF предоставляет:
+Система использует оба фреймворка на разных уровнях:
 
-- **Durable workflows** – чекпоинты на каждом шаге, позволяющие продолжить обработку после падения воркера.
-- **Agent‑ориентированную модель** – каждый агент имеет свою память, инструменты и может общаться с другими агентами.
-- **Встроенную наблюдаемость** через OpenTelemetry.
-- **Поддержку LLM** (Semantic Kernel под капотом) для принятия решений на основе извлечённого текста.
+| Аспект | Технология | Роль |
+|--------|------------|------|
+| Межсервисная коммуникация | MassTransit | Приём команд от Gateway, retry/DLQ, надёжная доставка |
+| Оркестрация шагов обработки | MAF (DocumentProcessingAgent) | Чекпоинты, resume после падения, расширяемость агентов |
 
-### Гибридная архитектура (рекомендация для будущих итераций)
+### Почему не только MassTransit?
 
-Ничто не мешает комбинировать оба фреймворка:
+MassTransit обеспечивает надёжную доставку сообщений между сервисами, но **не решает проблему падения воркера внутри одной обработки**. Если Worker упал после PdfPig, но до сохранения в БД — MassTransit сделает retry всего сообщения с нуля.
 
-- **MassTransit** остаётся на границе сервисов: приём команд от Gateway, отправка результатов.
-- **MAF** запускается **внутри** воркера как движок для сложной обработки PDF:
+MAF добавляет **чекпоинты на каждом шаге обработки**:
+
+```
+Без MAF:  crash → retry с нуля (Download → Parse → Extract → Save → Update)
+С MAF:   crash → resume с последнего чекпоинта (Extract → Save → Update)
+```
+
+### Добавление новых агентов
+
+Архитектура спроектирована для легкого добавления новых агентов. Пример — агент перевода:
 
 ```csharp
-public async Task Consume(ConsumeContext<PdfProcessingCommand> context)
+public class TranslationAgent : IAgent
 {
-    var agent = new DocumentProcessingAgent(); // MAF Agent
-    var result = await agent.ProcessAsync(
-        context.Message.DocumentId,
-        context.Message.FilePath,
-        context.CancellationToken
-    );
-    // сохранить результат через репозиторий
+    public string AgentName => "Translation";
+
+    public IReadOnlyList<string> Activities => new List<string>
+    {
+        "DetectLanguage",
+        "TranslateText",
+        "SaveTranslation"
+    }.AsReadOnly();
+
+    public async Task<AgentResult> ExecuteAsync(
+        AgentContext context,
+        ICheckpointStore checkpointStore,
+        CancellationToken cancellationToken = default)
+    {
+        // 1. Получить текст из предыдущего агента
+        var text = context.GetPreviousResult<string>("ExtractText");
+
+        // 2. Определить язык
+        var language = await DetectLanguageAsync(text, cancellationToken);
+        await checkpointStore.SaveCheckpointAsync(
+            AgentName, context.DocumentId, "DetectLanguage",
+            AgentResult.Success(language), cancellationToken);
+
+        // 3. Перевести
+        var translated = await _translationService.TranslateAsync(
+            text, language, context.TargetLanguage, cancellationToken);
+        await checkpointStore.SaveCheckpointAsync(
+            AgentName, context.DocumentId, "TranslateText",
+            AgentResult.Success(translated), cancellationToken);
+
+        // 4. Сохранить
+        await _repository.SaveTranslationAsync(
+            context.DocumentId, translated, cancellationToken);
+        await checkpointStore.SaveCheckpointAsync(
+            AgentName, context.DocumentId, "SaveTranslation",
+            AgentResult.Success(), cancellationToken);
+
+        return AgentResult.Success();
+    }
 }
 ```
 
-Это даёт:
-- Гарантированную доставку и ретраи от MassTransit.
-- Чекпоинты, AI‑агентов и расширяемость от MAF.
+Новый агент подключается к оркестратору без изменения существующего кода:
 
-### Итог
-
-| Аспект | Решение в текущем MVP | План на production |
-|--------|------------------------|---------------------|
-| Межсервисная коммуникация | MassTransit | MassTransit (оставить) |
-| Оркестрация шагов обработки | Ручная (один consumer) | MAF (чекпоинты + AI‑агенты) |
-| Retry/DLQ | MassTransit | MassTransit (базовый) + MAF checkpoint recovery |
-
-**Кратко:** MassTransit – правильный выбор для MVP. MAF будет добавлен, когда понадобятся **AI‑агенты и долгоживущие пайплайны** (search + retrieve + rerank + generate). Сейчас система готова к такому расширению – достаточно заменить внутреннюю логику Consumer на вызов MAF‑агента.
+```csharp
+// В Pipeline — добавить после DocumentProcessingAgent
+var pipeline = agentOrchestrator
+    .AddAgent<DocumentProcessingAgent>()
+    .AddAgent<TranslationAgent>()  // новый агент
+    .Build();
+```
 
 ## Выбор OCR‑решения
 
@@ -197,18 +278,18 @@ public async Task Consume(ConsumeContext<PdfProcessingCommand> context)
 - **OCRBase (ocrbase.dev)** — API крайне медленный, запросы зависали на минуты.
 - **OCR.Space** — аналогично, высокая задержка, нестабильная работа.
 
-Tesseract работает локально, без интернета, бесплатно, не требует API-ключей. Качество распознавания ниже облачных аналогов, но для MVP достаточно.
+Tesseract работает локально, без интернета, бесплатно, не требует API-ключей.
 
 ## Известные ограничения и отложенные улучшения
 
-- **Чекпоинты на каждый шаг обработки.** Если Worker упал после PdfPig, но до сохранения в БД, ретрай начинается с нуля. Возможное решение: MassTransit Sagas.
 - **Отдельный обработчик DLQ.** Сейчас ошибки идут в `_error` очередь MassTransit без отдельного сервиса‑обработчика.
-- **Безопасность.** Нет авторизации, HTTPS. Для production — JWT + reverse proxy.
+- **HTTPS.** Все эндпоинты работают по HTTP. Для production — reverse proxy (nginx/traefik) с TLS.
+- **AI-агенты.** Перевод, суммаризация, NER — запланированы как следующие агенты.
 
-## Сводка рабочего процесса (комментарии в коде)
+## Сводка рабочего процесса
 
 * **Загрузка (`POST /upload`)**
-  1. Проверка файла (PDF, ≤ 4 МБ).
+  1. Проверка файла (PDF, ≤ 4 МБ).
   2. Сохранение файла через `IFileStorage`.
   3. Создание `DocumentDto` со статусом `Uploaded`.
   4. Создание `OutboxMessage` с `PdfProcessingCommand`.
@@ -218,24 +299,27 @@ Tesseract работает локально, без интернета, бесп
   - Периодически сканирует таблицу `outbox` и публикует непроцессированные сообщения в RabbitMQ через MassTransit.
   - После успешной публикации помечает запись как обработанную.
 
-* **Worker Consumer**
+* **Worker (MAF Agent)**
   1. Idempotency check (processed_messages).
   2. Атомарное взятие задачи (UPDATE WHERE status=uploaded).
-  3. Скачивание PDF из storage.
-  4. Извлечение текста (PdfPig → Tesseract OCR fallback).
-  5. Сохранение результата в БД.
-  6. ACK сообщения.
-  7. При ошибке — ретрай 5s → 30s → 60s → DLQ.
+  3. Запуск `DocumentProcessingAgent` с чекпоинтами.
+  4. Каждый шаг сохраняет чекпоинт в PostgreSQL.
+  5. При падении — resume с последнего чекпоинта.
+  6. После успешного завершения — очистка чекпоинтов.
+  7. ACK сообщения.
 
 ## Итог
 
 | Метрика | Значение |
 |---------|----------|
-| Язык / платформа | C# 12 / .NET 8 |
+| Язык / платформа | C# / .NET 10 |
 | Брокер сообщений | RabbitMQ 4.x через MassTransit |
-| База данных | PostgreSQL 16 + EF Core 8 |
+| База данных | PostgreSQL 16 + EF Core 10 |
+| Agent Framework | Microsoft Agent Framework (MAF) |
 | OCR (сканы) | Tesseract 5.3 (pdftoppm → PNG → tesseract) |
-| Тесты | 19: 8 unit + 7 unit + 4 integration (Testcontainers) |
-| Мониторинг | Prometheus + Grafana (health checks, метрики) |
-| Демо | `./scripts/demo.sh` — поднять инфраструктуру и проверить |
-| Ссылки | [ROADMAP](docs/ROADMAP.md) · [TASK_COMPLETENESS](docs/TASK_COMPLETENESS.md) · [PRODUCTION_READINESS](docs/PRODUCTION_READINESS.md) · [ADR](docs/adr/ADR001_PDF_Processing_Architecture.md) |
+| Тесты | 37: 12 ApiGateway unit + 21 Worker unit + 4 integration (Testcontainers) |
+| Мониторинг | Prometheus + Grafana (health checks, метрики, structured logging через Serilog) |
+| Аутентификация | JWT (dev-эндпоинт /auth/token, production через внешний IDP) |
+| Логирование | Serilog + CompactJsonFormatter (structured logging) |
+| Демо | `./scripts/demo.sh` |
+| Ссылки | [AGENTIC_ROADMAP](docs/AGENTIC_ROADMAP.md) · [AGENTIC_READINESS](docs/AGENTIC_READINESS.md) · [ADR](docs/adr/ADR001_PDF_Processing_Architecture.md) |

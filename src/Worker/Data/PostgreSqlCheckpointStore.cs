@@ -14,10 +14,10 @@ namespace Worker.Data;
 /// </summary>
 public class PostgreSqlCheckpointStore : ICheckpointStore
 {
-    private readonly WorkerDbContext _context;
+    private readonly AppDbContext _context;
     private readonly ILogger<PostgreSqlCheckpointStore> _logger;
 
-    public PostgreSqlCheckpointStore(WorkerDbContext context, ILogger<PostgreSqlCheckpointStore> logger)
+    public PostgreSqlCheckpointStore(AppDbContext context, ILogger<PostgreSqlCheckpointStore> logger)
     {
         _context = context;
         _logger = logger;
