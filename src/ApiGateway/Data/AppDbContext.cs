@@ -32,6 +32,7 @@ public class AppDbContext : DbContext
         {
             entity.ToTable("outbox");
             entity.HasKey(e => e.Id);
+            entity.Property(e => e.DocumentId).IsRequired();
             entity.Property(e => e.MessagePayload).HasColumnType("jsonb").IsRequired();
             entity.Property(e => e.CreatedAt).IsRequired();
             entity.HasIndex(e => e.ProcessedAt).HasFilter("\"processed_at\" IS NULL");

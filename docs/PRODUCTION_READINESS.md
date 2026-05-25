@@ -21,13 +21,12 @@
 - **Grafana** — преднастроенный дашборд: загрузки/мин, p50/p95 времени обработки
 
 ### Тестирование
-- **37 тестов** — 12 ApiGateway unit + 21 Worker unit + 4 integration (Testcontainers)
-- OutboxPublisher tests, retry→DLQ tests, concurrency/race condition tests
+- **19 тестов** — unit (ApiGateway + Worker) + интеграционные (Testcontainers)
 - **CI pipeline** — GitHub Actions с Tesseract OCR, 3 тестовых проекта, Docker build
 
 ### Graceful Shutdown
 - **MassTransit** — обрабатывает SIGTERM, завершает текущие сообщения
-- **Worker** — `MetricsHostedService` (IHostedService) корректно останавливает metric-сервер при SIGTERM
+- **Worker** — `using var metricServer` корректно закрывает HTTP-сервер
 
 ## Что требуется доработать
 
@@ -36,14 +35,14 @@
 | Задача | Важность | Описание |
 |--------|----------|----------|
 | **Отдельный обработчик DLQ** | Высокая | Сейчас ошибки уходят в `_error` очередь MassTransit. Нужен сервис, который читает DLQ, логирует и при необходимости репроцессит. |
-| **Чекпоинты обработки** | 🟢 Реализовано | MAF (DocumentProcessingAgent) с чекпоинтами в PostgreSQL. Каждый шаг сохраняет состояние — при падении Worker продолжает с последнего чекпоинта. |
+| **Чекпоинты обработки** | Высокая | При падении Worker после PdfPig ретрай начинается с нуля. Решение: MassTransit Sagas или MAF. |
 | **Rate limiting** | Средняя | API Gateway не ограничивает частоту запросов. Для production нужен `AspNetCoreRateLimit` или аналогичный middleware. |
 
 ### Мониторинг и наблюдаемость
 
 | Задача | Важность | Описание |
 |--------|----------|----------|
-| **Структурированное логирование** | 🟢 Реализовано | Serilog + CompactJsonFormatter. Все логи в JSON-формате, готовы для Loki/Elasticsearch. |
+| **Структурированное логирование** | Средняя | Сейчас `Console` логгер. Для production — Serilog/Sentry/OpenTelemetry с выводом в JSON. |
 | **OpenTelemetry трассировка** | Средняя | MassTransit + EF Core не имеют distributed tracing. Для отладки задержек нужен OpenTelemetry с Jaeger/Zipkin. |
 | **Алерты** | Средняя | Prometheus есть, но нет alerting rules и Alertmanager для оповещений. |
 
@@ -51,7 +50,7 @@
 
 | Задача | Важность | Описание |
 |--------|----------|----------|
-| **JWT авторизация** | 🟢 Реализовано | JWT Bearer аутентификация. Dev-эндпоинт `/auth/token`, production через внешний IDP. |
+| **JWT авторизация** | Средняя | Сейчас API открыт. Для production нужен хотя бы базовый API key или JWT bearer. |
 | **HTTPS/TLS** | Средняя | Все эндпоинты работают по HTTP. В production — reverse proxy (nginx/traefik) с TLS. |
 | **Секреты** | Средняя | .env файл с токенами в репозитории (GITHUB_TOKEN). В production — secrets manager/vault. |
 
@@ -77,6 +76,6 @@
 | Масштабирование | 🟡 Средняя | 1 Worker, 1 Gateway. Горизонтальное масштабирование возможно, но не тестировалось |
 | Устойчивость к сбоям | 🟢 Высокая | Ретраи, DLQ, идемпотентность, атомарные статусы |
 | Наблюдаемость | 🟢 Высокая | Prometheus + Grafana + health checks |
-| Безопасность | 🟡 Средняя | JWT авторизация реализована. HTTPS и secrets management — в плане |
-| Тестирование | 🟢 Высокая | 37 тестов (12+21+4), CI пайплайн |
+| Безопасность | 🔴 Низкая | Нет авторизации, HTTPS, secrets management |
+| Тестирование | 🟢 Высокая | 19 тестов, CI пайплайн |
 | Документация | 🟢 Высокая | ADR, roadmap, README, task completeness, production readiness |

@@ -2,7 +2,7 @@
 
 ## Обзор
 
-Этот репозиторий реализует систему обработки PDF‑документов в соответствии с архитектурным решением [ADR001](docs/adr/ADR001_PDF_Processing_Architecture.md) и планом реализации [roadmap](docs/roadmap.md). Система состоит из двух сервисов:
+Этот репозиторий реализует систему обработки PDF‑документов в соответствии с архитектурным решением [ADR001](docs/adr/ADR001_PDF_Processing_Architecture.md) и планом реализации [ROADMAP](docs/ROADMAP.md). Система состоит из двух сервисов:
 
 | Сервис | Ответственность |
 |--------|-----------------|
@@ -23,14 +23,30 @@
   /Worker.UnitTests     – Юнит‑тесты воркера (7 тестов, включая Tesseract OCR)
   /IntegrationTests     – Интеграционные тесты через Testcontainers (4 теста)
 /samples                – Примеры PDF для тестирования (текстовый, скан, инвойс)
+/scripts                – Вспомогательные скрипты (demo.sh)
 /.github
   /workflows/ci.yml     – CI‑pipeline (build, test x3, Docker образы)
 docs/
   /adr/                 – Архитектурные решения (ADR-001)
-  /roadmap.md           – План реализации
+  /ROADMAP.md           – План реализации
+  /TASK_COMPLETENESS.md – Отчёт о полноте реализации
+  /PRODUCTION_READINESS.md – Оценка production-готовности
+/grafana
+  /dashboards/          – Преднастроенный дашборд Grafana
+/prometheus
+  /prometheus.yml       – Конфигурация сбора метрик
 docker-compose.yml      – Оркестрация PostgreSQL, RabbitMQ, ApiGateway и Worker
 db/init.sql             – Инициализационный скрипт БД
 ```
+
+## Документация
+
+| Документ | Описание |
+|----------|----------|
+| [ROADMAP.md](docs/ROADMAP.md) | План реализации по дням (1–7), статус выполнения |
+| [TASK_COMPLETENESS.md](docs/TASK_COMPLETENESS.md) | Сопоставление требований ТЗ с реализованным функционалом |
+| [PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md) | Оценка готовности к production: что сделано, что доделать |
+| [ADR001](docs/adr/ADR001_PDF_Processing_Architecture.md) | Архитектурное решение: выбор MAF → MassTransit, статусная модель, outbox |
 
 ## Начало работы
 
@@ -48,24 +64,45 @@ db/init.sql             – Инициализационный скрипт БД
    cd agentic-pdf-workflow
    ```
 
-2. **Запустить вспомогательные сервисы**
+2. **Собрать проекты**
+   ```bash
+   dotnet build
+   ```
+
+3. **Запустить вспомогательные сервисы**
    ```bash
    docker compose up -d postgres rabbitmq
    ```
 
-3. **Запустить API‑шлюз**
+4. **Запустить API‑шлюз**
    ```bash
    cd src/ApiGateway
    dotnet run
    ```
 
-4. **Запустить воркер** (в отдельном терминале)
+5. **Запустить воркер** (в отдельном терминале)
    ```bash
    cd src/Worker
    dotnet run
    ```
 
-5. **Взаимодействовать с API** – Swagger UI доступен по адресу `http://localhost:5000/swagger`.
+6. **Взаимодействовать с API** – Swagger UI доступен по адресу `http://localhost:5000/swagger`.
+
+### Запуск демо-скрипта
+
+Автоматизированный скрипт `scripts/demo.sh` поднимает инфраструктуру, запускает сервисы, загружает все PDF из `samples/` и выводит результат:
+
+```bash
+./scripts/demo.sh
+```
+
+Скрипт последовательно:
+1. Запускает PostgreSQL + RabbitMQ через Docker Compose
+2. Стартует Gateway и Worker в development-режиме
+3. Проверяет `/health/live` и Swagger UI
+4. Загружает все `.pdf` из `samples/`
+5. Поллит `/text/{id}` до завершения обработки
+6. Сохраняет извлечённый текст и выводит сводку
 
 ### Запуск тестов
 
@@ -74,6 +111,8 @@ db/init.sql             – Инициализационный скрипт БД
 ```bash
 dotnet test
 ```
+
+Результат: **19 тестов** (8 ApiGateway + 7 Worker + 4 Integration) — все проходят.
 
 ## CI‑pipeline
 
@@ -88,34 +127,73 @@ GitHub Actions (`.github/workflows/ci.yml`) выполняет:
 
 Пайплайн запускается при каждом push/PR в ветку `main` и в feature‑ветки.
 
-## MAF vs MassTransit — что используется вместо Microsoft Agent Framework
+## MAF vs MassTransit: выбор технологий
 
-В ADR-001 планировалось использовать **Microsoft Agent Framework (MAF)** для оркестрации шагов обработки документа: `DownloadDocument → UpdateStatusProcessing → ExtractTextStep → SaveTextAndComplete`. Каждый шаг — независимая единица с собственным checkpoint.
+В [ADR001](docs/adr/ADR001_PDF_Processing_Architecture.md) изначально планировалось использовать **Microsoft Agent Framework (MAF)** для оркестрации шагов обработки документа (`DownloadDocument → UpdateStatusProcessing → ExtractTextStep → SaveTextAndComplete`) с встроенными чекпоинтами и декларативными ретраями. Однако в ходе реализации MVP был выбран **MassTransit** – зрелый фреймворк для обмена сообщениями.
 
 На практике `MassTransit` взял на себя бóльшую часть того, что должен был дать MAF:
 
-| Что планировалось через MAF | Кто реализовал |
-|----------------------------|----------------|
-| Ретраи-механизм (задержки 5s → 30s → 60s) | MassTransit `.UseMessageRetry()` |
-| Dead Letter Queue | MassTransit встроенная `_error` очередь |
-| Graceful Shutdown | MassTransit сам обрабатывает SIGTERM |
-| ACK/nack управление | MassTransit автоматически |
-| Ограничение параллелизма (prefetch=1) | MassTransit `e.PrefetchCount` |
+| Задача | MassTransit | MAF |
+|--------|-------------|---------------------|
+| Надёжная доставка сообщений через RabbitMQ | ✅ First‑class поддержка, конфигурация в несколько строк | ❌ Требует ручной настройки поверх Raw RabbitMQ |
+| Retry‑механизм (5s → 30s → 60s) | ✅ `.UseMessageRetry()` с экспоненциальной задержкой | ❌ Нужно писать кастомный ретрай посредник |
+| Dead Letter Queue | ✅ Встроенная `_error` очередь | ❌ Отсутствует, требуется самостоятельная реализация |
+| Graceful Shutdown | ✅ Автоматически обрабатывает SIGTERM | ❌ Не документирован |
+| Ограничение параллелизма (prefetch=1) | ✅ `e.PrefetchCount` | ❌ Нет поддержки |
+| Idempotency Consumer | ✅ Легко реализуется через фильтры | ❌ Нет встроенных механизмов |
 
-Что MAF бы дал дополнительно (и пока не реализовано):
+**Вывод для MVP:** MassTransit позволяет быстро получить надёжную систему обмена сообщениями без написания низкоуровневого кода. Это прагматичный выбор, который гарантирует стабильность на старте.
 
-- **Чекпоинты на каждый шаг** — при падении Worker после PdfPig, но до сохранения в БД, ретрай начинается с нуля (качка PDF + парсинг). MAF позволил бы продолжить с шага сохранения.
-- **Декларативное расширение** — добавить новый шаг (NER, перевод, суммаризация) можно было бы простым добавлением Agent'а в workflow. Сейчас для этого нужен отдельный consumer или правка `DocumentProcessingService`.
+### MAF сегодня (на момент MVP)
 
-**Вывод:** для MVP MassTransit достаточен. Чекпоинты станут актуальны, когда появится много шагов или дорогие внешние вызовы. MassTransit Sagas — возможная альтернатива MAF для production.
+С апреля 2026 **Microsoft Agent Framework стал production‑ready** и официально рекомендован для **координации AI‑агентов** (перевод, суммаризация, классификация, маршрутизация). MAF предоставляет:
 
-## Выбор OCR-решения
+- **Durable workflows** – чекпоинты на каждом шаге, позволяющие продолжить обработку после падения воркера.
+- **Agent‑ориентированную модель** – каждый агент имеет свою память, инструменты и может общаться с другими агентами.
+- **Встроенную наблюдаемость** через OpenTelemetry.
+- **Поддержку LLM** (Semantic Kernel под капотом) для принятия решений на основе извлечённого текста.
+
+### Гибридная архитектура (рекомендация для будущих итераций)
+
+Ничто не мешает комбинировать оба фреймворка:
+
+- **MassTransit** остаётся на границе сервисов: приём команд от Gateway, отправка результатов.
+- **MAF** запускается **внутри** воркера как движок для сложной обработки PDF:
+
+```csharp
+public async Task Consume(ConsumeContext<PdfProcessingCommand> context)
+{
+    var agent = new DocumentProcessingAgent(); // MAF Agent
+    var result = await agent.ProcessAsync(
+        context.Message.DocumentId,
+        context.Message.FilePath,
+        context.CancellationToken
+    );
+    // сохранить результат через репозиторий
+}
+```
+
+Это даёт:
+- Гарантированную доставку и ретраи от MassTransit.
+- Чекпоинты, AI‑агентов и расширяемость от MAF.
+
+### Итог
+
+| Аспект | Решение в текущем MVP | План на production |
+|--------|------------------------|---------------------|
+| Межсервисная коммуникация | MassTransit | MassTransit (оставить) |
+| Оркестрация шагов обработки | Ручная (один consumer) | MAF (чекпоинты + AI‑агенты) |
+| Retry/DLQ | MassTransit | MassTransit (базовый) + MAF checkpoint recovery |
+
+**Кратко:** MassTransit – правильный выбор для MVP. MAF будет добавлен, когда понадобятся **AI‑агенты и долгоживущие пайплайны** (search + retrieve + rerank + generate). Сейчас система готова к такому расширению – достаточно заменить внутреннюю логику Consumer на вызов MAF‑агента.
+
+## Выбор OCR‑решения
 
 Для распознавания текста в отсканированных PDF используется **Tesseract OCR** (локальный, запускается через `pdftoppm` + `tesseract`).
 
 Почему не другие варианты:
 
-- **Azure AI Document Intelligence** — запросил доступ к API, аккаунт долго верифицируется, не дождался ключа.
+- **Azure AI Document Intelligence** — аккаунт долго верифицируется, не дождался ключа.
 - **OCRBase (ocrbase.dev)** — API крайне медленный, запросы зависали на минуты.
 - **OCR.Space** — аналогично, высокая задержка, нестабильная работа.
 
@@ -123,9 +201,9 @@ Tesseract работает локально, без интернета, бесп
 
 ## Известные ограничения и отложенные улучшения
 
-- **Последовательная обработка страниц OCR.** Tesseract обрабатывает страницы в цикле `foreach`. Параллелизация через `Parallel.ForEachAsync` отложена на MVP — сейчас `prefetch=1` и один consumer, узкое место не критично. Для production добавить `SemaphoreSlim` (ограничение на количество одновременных процессов tesseract).
 - **Чекпоинты на каждый шаг обработки.** Если Worker упал после PdfPig, но до сохранения в БД, ретрай начинается с нуля. Возможное решение: MassTransit Sagas.
-- **Отдельный обработчик DLQ.** Сейчас ошибки идут в `_error` очередь MassTransit без отдельного сервису‑обработчика.
+- **Отдельный обработчик DLQ.** Сейчас ошибки идут в `_error` очередь MassTransit без отдельного сервиса‑обработчика.
+- **Безопасность.** Нет авторизации, HTTPS. Для production — JWT + reverse proxy.
 
 ## Сводка рабочего процесса (комментарии в коде)
 
@@ -139,3 +217,25 @@ Tesseract работает локально, без интернета, бесп
 * **Outbox Publisher** (`BackgroundService`)
   - Периодически сканирует таблицу `outbox` и публикует непроцессированные сообщения в RabbitMQ через MassTransit.
   - После успешной публикации помечает запись как обработанную.
+
+* **Worker Consumer**
+  1. Idempotency check (processed_messages).
+  2. Атомарное взятие задачи (UPDATE WHERE status=uploaded).
+  3. Скачивание PDF из storage.
+  4. Извлечение текста (PdfPig → Tesseract OCR fallback).
+  5. Сохранение результата в БД.
+  6. ACK сообщения.
+  7. При ошибке — ретрай 5s → 30s → 60s → DLQ.
+
+## Итог
+
+| Метрика | Значение |
+|---------|----------|
+| Язык / платформа | C# 12 / .NET 8 |
+| Брокер сообщений | RabbitMQ 4.x через MassTransit |
+| База данных | PostgreSQL 16 + EF Core 8 |
+| OCR (сканы) | Tesseract 5.3 (pdftoppm → PNG → tesseract) |
+| Тесты | 19: 8 unit + 7 unit + 4 integration (Testcontainers) |
+| Мониторинг | Prometheus + Grafana (health checks, метрики) |
+| Демо | `./scripts/demo.sh` — поднять инфраструктуру и проверить |
+| Ссылки | [ROADMAP](docs/ROADMAP.md) · [TASK_COMPLETENESS](docs/TASK_COMPLETENESS.md) · [PRODUCTION_READINESS](docs/PRODUCTION_READINESS.md) · [ADR](docs/adr/ADR001_PDF_Processing_Architecture.md) |
