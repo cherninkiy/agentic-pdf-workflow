@@ -1,0 +1,30 @@
+{
+  "title": "PDF Processing Dashboard",
+  "uid": "pdf-processing",
+  "panels": [
+    {
+      "title": "Document Uploads",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "rate(document_upload_total[5m]) * 60",
+          "legendFormat": "Uploads/min"
+        }
+      ]
+    },
+    {
+      "title": "Processing Duration",
+      "type": "graph",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, rate(document_processing_duration_seconds_bucket[5m]))",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.50, rate(document_processing_duration_seconds_bucket[5m]))",
+          "legendFormat": "p50"
+        }
+      ]
+    }
+  ]
+}
