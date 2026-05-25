@@ -14,7 +14,7 @@ public class PdfTextExtractor
         _ocrService = ocrService;
     }
 
-    public virtual async Task<string?> ExtractTextAsync(byte[] pdfContent, CancellationToken cancellationToken = default)
+    public async Task<string?> ExtractTextAsync(byte[] pdfContent, CancellationToken cancellationToken = default)
     {
         string? extractedText = null;
 

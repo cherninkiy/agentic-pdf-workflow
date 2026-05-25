@@ -1,104 +1,56 @@
-using ApiGateway.Authentication;
 using ApiGateway.BackgroundServices;
 using ApiGateway.Data;
 using ApiGateway.Extensions;
-using ApiGateway.HealthChecks;
 using ApiGateway.Services;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
-using Prometheus;
-using Scalar.AspNetCore;
-using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Host.UseSerilog((context, loggerConfig) =>
-    loggerConfig.ReadFrom.Configuration(context.Configuration)
-                .WriteTo.Console(new Serilog.Formatting.Compact.CompactJsonFormatter()));
+// Database
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-builder.Services.AddDatabase(builder.Configuration, builder.Environment);
-
-var rabbitHost = builder.Configuration.GetValue<string>("RabbitMq:Host");
-if (!string.IsNullOrWhiteSpace(rabbitHost) && !builder.Environment.IsEnvironment("Testing"))
+// MassTransit with RabbitMQ
+builder.Services.AddMassTransit(x =>
 {
-    builder.Services.AddMassTransit(x =>
+    x.UsingRabbitMq((context, cfg) =>
     {
-        x.UsingRabbitMq((context, cfg) =>
+        cfg.Host(builder.Configuration.GetValue<string>("RabbitMq:Host") ?? "localhost", h =>
         {
-            cfg.Host(rabbitHost, h =>
-            {
-                h.Username(builder.Configuration.GetValue<string>("RabbitMq:Username") ?? "guest");
-                h.Password(builder.Configuration.GetValue<string>("RabbitMq:Password") ?? "guest");
-            });
-
-            cfg.ConfigureEndpoints(context);
+            h.Username(builder.Configuration.GetValue<string>("RabbitMq:Username") ?? "guest");
+            h.Password(builder.Configuration.GetValue<string>("RabbitMq:Password") ?? "guest");
         });
+
+        cfg.ConfigureEndpoints(context);
     });
-}
+});
 
-builder.Services.AddHealthChecks()
-    .AddDbContextCheck<GatewayDbContext>("postgres");
-
-if (!string.IsNullOrWhiteSpace(rabbitHost) && !builder.Environment.IsEnvironment("Testing"))
-{
-    builder.Services.AddHealthChecks()
-        .AddCheck<RabbitMqHealthCheck>("rabbitmq");
-}
-
+// Application services
 builder.Services.AddApplicationServices(builder.Configuration);
 builder.Services.AddScoped<DocumentService>();
+builder.Services.AddHostedService<OutboxPublisher>();
 
-if (!string.IsNullOrWhiteSpace(rabbitHost) && !builder.Environment.IsEnvironment("Testing"))
-{
-    builder.Services.AddHostedService<OutboxPublisher>();
-}
-
-builder.Services.AddGatewayAuthentication(builder.Configuration, builder.Environment);
-
+// Controllers + Swagger
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddOpenApi();
+builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
+// Auto-migrate database
 using (var scope = app.Services.CreateScope())
 {
-    var db = scope.ServiceProvider.GetRequiredService<GatewayDbContext>();
-    if (db.Database.IsRelational())
-    {
-        var pendingMigrations = db.Database.GetPendingMigrations();
-        if (pendingMigrations.Any())
-        {
-            db.Database.Migrate();
-        }
-        else
-        {
-            db.Database.EnsureCreated();
-        }
-    }
-    else
-    {
-        db.Database.EnsureCreated();
-    }
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.EnsureCreated();
 }
 
-app.MapOpenApi();
-app.MapScalarApiReference();
-
-app.UseGatewayAuthentication(app.Environment);
-
-app.UseHttpMetrics();
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
 
 app.MapControllers();
 
-app.MapHealthChecks("/health/live", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
-{
-    Predicate = _ => false
-});
-app.MapHealthChecks("/health/ready");
-
-app.MapMetrics();
-
 app.Run();
-
-public partial class Program { }

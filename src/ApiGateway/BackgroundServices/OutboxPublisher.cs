@@ -27,8 +27,8 @@ public class OutboxPublisher : BackgroundService
             try
             {
                 using var scope = _scopeFactory.CreateScope();
-                var outboxRepository = scope.ServiceProvider.GetRequiredService<IOutboxRepository>();
-                var pendingMessages = await outboxRepository.GetOutboxPendingAsync(stoppingToken);
+                var repository = scope.ServiceProvider.GetRequiredService<IDocumentRepository>();
+                var pendingMessages = await repository.GetOutboxPendingAsync(stoppingToken);
 
                 foreach (var message in pendingMessages)
                 {
@@ -42,7 +42,7 @@ public class OutboxPublisher : BackgroundService
                         catch (JsonException ex)
                         {
                             _logger.LogError(ex, "Corrupt outbox message payload for {OutboxId}, marking as processed to unblock queue", message.Id);
-                            await outboxRepository.MarkOutboxProcessedAsync(message.Id, stoppingToken);
+                            await repository.MarkOutboxProcessedAsync(message.Id, stoppingToken);
                             continue;
                         }
 
@@ -52,7 +52,7 @@ public class OutboxPublisher : BackgroundService
                             _logger.LogInformation("Published outbox message {OutboxId} for document {DocumentId}", message.Id, message.DocumentId);
                         }
 
-                        await outboxRepository.MarkOutboxProcessedAsync(message.Id, stoppingToken);
+                        await repository.MarkOutboxProcessedAsync(message.Id, stoppingToken);
                     }
                     catch (Exception ex)
                     {

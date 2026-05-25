@@ -1,4 +1,3 @@
-using Prometheus;
 using Shared.Interfaces;
 using Shared.Models;
 
@@ -6,22 +5,16 @@ namespace ApiGateway.Services;
 
 public class DocumentService
 {
-    private static readonly Counter UploadCount = Metrics
-        .CreateCounter("document_upload_total", "Total number of uploaded documents.");
-
     private readonly IDocumentRepository _repository;
-    private readonly IOutboxRepository _outboxRepository;
     private readonly IFileStorage _fileStorage;
     private readonly ILogger<DocumentService> _logger;
 
     public DocumentService(
         IDocumentRepository repository,
-        IOutboxRepository outboxRepository,
         IFileStorage fileStorage,
         ILogger<DocumentService> logger)
     {
         _repository = repository;
-        _outboxRepository = outboxRepository;
         _fileStorage = fileStorage;
         _logger = logger;
     }
@@ -56,8 +49,7 @@ public class DocumentService
             CreatedAt = DateTime.UtcNow
         };
 
-        await _outboxRepository.CreateAsync(document, outboxMessage, cancellationToken);
-        UploadCount.Inc();
+        await _repository.CreateAsync(document, outboxMessage, cancellationToken);
         _logger.LogInformation("Document {DocumentId} uploaded, filename: {Filename}, outbox message: {OutboxId}", documentId, filename, outboxMessage.Id);
 
         return new UploadResponse
@@ -71,18 +63,13 @@ public class DocumentService
     public async Task<List<DocumentListItem>> GetAllDocumentsAsync(CancellationToken cancellationToken = default)
     {
         var documents = await _repository.GetAllAsync(cancellationToken);
-        var ordered = documents
-            .OrderByDescending(d => d.CreatedAt)
-            .ThenByDescending(d => d.Id)
-            .Select(d => new DocumentListItem
-            {
-                Id = d.Id,
-                Filename = d.Filename,
-                Status = d.Status,
-                CreatedAt = d.CreatedAt
-            })
-            .ToList();
-        return ordered;
+        return documents.Select(d => new DocumentListItem
+        {
+            Id = d.Id,
+            Filename = d.Filename,
+            Status = d.Status,
+            CreatedAt = d.CreatedAt
+        }).ToList();
     }
 
     public async Task<(DocumentDto? Document, string? ErrorMessage, int? StatusCode)> GetDocumentTextAsync(Guid id, CancellationToken cancellationToken = default)

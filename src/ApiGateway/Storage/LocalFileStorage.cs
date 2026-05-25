@@ -1,5 +1,4 @@
 using Shared.Interfaces;
-using Microsoft.Extensions.Logging;
 
 namespace ApiGateway.Storage;
 
@@ -7,30 +6,10 @@ public class LocalFileStorage : IFileStorage
 {
     private readonly string _basePath;
 
-    private readonly ILogger<LocalFileStorage> _logger;
-
-    public LocalFileStorage(string basePath, ILogger<LocalFileStorage> logger)
+    public LocalFileStorage(string basePath)
     {
-        _logger = logger;
-        // Ensure the base path exists. If creation fails, log the error and rethrow to fail fast.
         _basePath = basePath;
-        try
-        {
-            Directory.CreateDirectory(_basePath);
-        }
-        catch (Exception ex)
-        {
-            // Use the injected logger; fallback to console if logger is null.
-            if (_logger != null)
-            {
-                _logger.LogError(ex, "Failed to create storage directory '{BasePath}'", _basePath);
-            }
-            else
-            {
-                Console.Error.WriteLine($"Failed to create storage directory '{_basePath}': {ex.Message}");
-            }
-            throw;
-        }
+        Directory.CreateDirectory(_basePath);
     }
 
     public async Task<string> SaveAsync(Stream content, string fileName, CancellationToken cancellationToken = default)

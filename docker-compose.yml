@@ -65,7 +65,8 @@ services:
       RabbitMq__Host: rabbitmq
       RabbitMq__Username: ${RABBITMQ_USER:-pdf_user}
       RabbitMq__Password: ${RABBITMQ_PASSWORD:-pdf_password}
-      # Tesseract OCR is built-in — no env vars needed
+      Azure__DocumentIntelligence__Endpoint: ${AZURE_OCR_ENDPOINT:-}
+      Azure__DocumentIntelligence__ApiKey: ${AZURE_OCR_API_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -73,26 +74,6 @@ services:
         condition: service_healthy
     volumes:
       - shared_storage:/app/storage
-
-  prometheus:
-    image: prom/prometheus
-    container_name: pdf-prometheus
-    volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-    ports:
-      - "9090:9090"
-    restart: unless-stopped
-
-  grafana:
-    image: grafana/grafana
-    container_name: pdf-grafana
-    volumes:
-      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
-    ports:
-      - "3000:3000"
-    environment:
-      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/provisioning/dashboards/pdf-processing.json
-    restart: unless-stopped
 
 volumes:
   postgres_data:
