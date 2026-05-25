@@ -74,26 +74,6 @@ services:
     volumes:
       - shared_storage:/app/storage
 
-  prometheus:
-    image: prom/prometheus
-    container_name: pdf-prometheus
-    volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-    ports:
-      - "9090:9090"
-    restart: unless-stopped
-
-  grafana:
-    image: grafana/grafana
-    container_name: pdf-grafana
-    volumes:
-      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
-    ports:
-      - "3000:3000"
-    environment:
-      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/provisioning/dashboards/pdf-processing.json
-    restart: unless-stopped
-
 volumes:
   postgres_data:
   shared_storage:

@@ -1,6 +1,4 @@
-using System.Diagnostics;
 using Microsoft.Extensions.Logging;
-using Prometheus;
 using Shared.Interfaces;
 using Shared.Models;
 
@@ -8,9 +6,6 @@ namespace Worker.Services;
 
 public class DocumentProcessingService
 {
-    private static readonly Histogram ProcessingDuration = Metrics
-        .CreateHistogram("document_processing_duration_seconds", "Time taken to process a document.");
-
     private readonly IDocumentRepository _repository;
     private readonly IFileStorage _fileStorage;
     private readonly PdfTextExtractor _textExtractor;
@@ -58,7 +53,6 @@ public class DocumentProcessingService
 
         try
         {
-            using var _ = ProcessingDuration.NewTimer();
             var document = await _repository.GetByIdAsync(documentId, cancellationToken);
             if (document == null)
             {

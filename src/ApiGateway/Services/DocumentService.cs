@@ -1,4 +1,3 @@
-using Prometheus;
 using Shared.Interfaces;
 using Shared.Models;
 
@@ -16,9 +15,6 @@ namespace ApiGateway.Services;
 // publishes the command to RabbitMQ for asynchronous processing by the Worker.
 public class DocumentService
 {
-    private static readonly Counter UploadCount = Metrics
-        .CreateCounter("document_upload_total", "Total number of uploaded documents.");
-
     private readonly IDocumentRepository _repository;
     private readonly IFileStorage _fileStorage;
     private readonly ILogger<DocumentService> _logger;
@@ -73,7 +69,6 @@ public class DocumentService
 
         // Atomic insert: document + outbox in one transaction
         await _repository.CreateAsync(document, outboxMessage, cancellationToken);
-        UploadCount.Inc();
         _logger.LogInformation("Document {DocumentId} uploaded, filename: {Filename}, outbox message: {OutboxId}", documentId, filename, outboxMessage.Id);
 
         return new UploadResponse

@@ -2,10 +2,8 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Prometheus;
 using Shared.Interfaces;
 using Worker.Consumers;
 using Worker.Data;
@@ -87,11 +85,6 @@ var host = Host.CreateDefaultBuilder(args)
         logging.AddConsole();
     })
     .Build();
-
-// ── Prometheus metrics server ──
-// Serves /metrics on a separate port so Prometheus can scrape worker metrics
-using var metricServer = new MetricServer(port: 5091);
-metricServer.Start();
 
 // Auto-create database tables (Dev only)
 using (var scope = host.Services.CreateScope())

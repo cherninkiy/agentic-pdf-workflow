@@ -13,12 +13,7 @@ public class SmokeTests : IClassFixture<WebApplicationFactory<Program>>
 
     public SmokeTests(WebApplicationFactory<Program> factory)
     {
-        _factory = factory.WithWebHostBuilder(builder =>
-        {
-            builder.UseSetting("ASPNETCORE_ENVIRONMENT", "Testing");
-            // Clear connection string so Program.cs falls back to in-memory database
-            builder.UseSetting("ConnectionStrings__DefaultConnection", "");
-        });
+        _factory = factory;
     }
 
     [Fact]
